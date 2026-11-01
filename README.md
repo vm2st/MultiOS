@@ -29,5 +29,8 @@ MultiOS will include
 At the moment, we are focused on the x86 architecture (PCs, laptops, and other similar devices).
 Our next target will be ARM.
 
+## What about the core?
+MultiOS uses core named "MultiPulti". Core itself are written in C. At this moment, core inclued HAL, OSK, FAT32, exFAT, NTFS and commands. With all these features, core is still not completed. Maybe at some time it will be finished.
+
 ## Do we use AI?
 Of course, we use AI. This enables this OS to exist in the first place. It’s worth noting that many things, such as the EMC bytecode, are developed by us without using AI, just like the interpreter.
