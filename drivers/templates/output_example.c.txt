@@ -1,0 +1,13 @@
+/* vm2 studios | t.me/v2vproj — EXAMPLE ONLY, NOT a working driver.
+ * Copy to drivers/MYBOARD/text.c, implement hardware functions, add to build,
+ * register &my_output in platform/MYBOARD/registry.h; choose output=my-text. */
+#include "multios/modules.h"
+static void put(void *ctx,char c){(void)ctx;(void)c; /* TODO real display */}
+static int open_output(void *ctx,const char *options,MultiDevice *d){
+ (void)ctx;if(*options)return INVALID;
+ /* TODO initialize hardware, propagate failures, cleanup on failure.
+  * No OSK renderer: osk=on must be rejected by manager. */
+ d->output=(MultiOutput){.putc=put};return 0;
+}
+const MultiDriver my_output=MULTI_DRIVER("my-text",MULTI_OUTPUT,
+ "EXAMPLE ONLY: implement before use",open_output,0);

@@ -1,0 +1,13 @@
+{
+  "project": "FatFs R0.16 patch 2",
+  "author": "ChaN",
+  "repository": "https://github.com/abbrev/fatfs",
+  "commit": "ab992fcf2926b8a1ee3f0a8f9cefb6584174100d",
+  "sha256": {
+    "ff.c": "ebe1f68592b3f51a9ee92dba97b5a0512fa61c48989b169fbe19e6071ffd6646",
+    "ff.h": "42920ae4d6080bfc2a72d92a9969b5e94eeaff070e5e71d90da9ab6d7d8e158e",
+    "ffconf.h": "202a7321066873fb3fa8c6ca83eba2b5964a091c366962f87ebd86332652430a",
+    "diskio.h": "1c2b29f53e061c55d43b2e412c3a61320b2621bac7561a05e275514baa44785a",
+    "ffunicode.c": "86cd4710c0968f0335e631ad440f90f5d3e92aa10d9bac6981533a32fd8e87c2"
+  }
+}

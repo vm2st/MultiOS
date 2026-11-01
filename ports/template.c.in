@@ -1,0 +1,24 @@
+/* vm2 studios | t.me/v2vproj — MultiOS / MultiPulti */
+/* Integration template ONLY. Not compiled and not a working hardware port.
+ * Supply board startup, linker script and the board_* drivers first.
+ * Default to read-only. Do not add a fake successful flush callback.
+ */
+#include "multios/hal.h"
+extern int board_read_sector(void *ctx,u32 lba,u8 *sector);
+extern void board_serial_putc(void *ctx,char ch);
+extern int board_serial_getc(void *ctx);
+extern void board_stop(void *ctx);
+extern u32 board_device_sectors(void);
+void multios_board_entry(void){
+ MultiHal h={
+  .abi=MULTIOS_HAL_ABI,
+  .name="REPLACE: exact board name",
+  .architecture="REPLACE: actual CPU/ABI",
+  .block={.sector_bytes=512,.writable=0,.read=board_read_sector},
+  .console={.putc=board_serial_putc,.getc=board_serial_getc},
+  .stop=board_stop,
+ };
+ h.block.sectors=board_device_sectors();
+ if(multi_hal_bind(&h)<0){board_stop(0);return;}
+ shell();
+}

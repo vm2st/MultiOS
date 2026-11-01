@@ -1,0 +1,145 @@
+MultiOS / MultiPulti own sources: vm2 studios | t.me/v2vproj. MIT (see LICENSE).
+
+The UEFI binary links GNU-EFI 3.0.11 runtime/library components.
+Since 0.19 the default SDK is built from the included unmodified source archive
+with explicit baseline x86-64 flags; see tools/build_uefi_runtime.py.
+GNU-EFI source archive and per-file notices are included under third_party/gnu-efi.
+Upstream: https://github.com/ncroxon/gnu-efi/tree/3.0.11
+These components retain their own copyrights and licenses.
+QEMU, OVMF firmware, compilers and formatting tools are NOT included.
+Filesystem profiles differ:
+- Legacy profiles retain vm2's original bounded FAT32/exFAT writers and NTFS reader.
+- filesystems-fatfs.mk includes ChaN FatFs R0.16 patch 2 for FAT32/exFAT
+  reads, directory enumeration, free-space queries and mutations (0.18+).
+  Original notices retained in vendor/fatfs; configuration changes
+  and wrappers are identified separately. Permissive upstream notice applies.
+- filesystems-ntfs3g.mk additionally links NTFS-3G 2022.10.3 library code,
+  GPL-2.0-or-later. Copyrights, AUTHORS, COPYING and COPYING.LIB retained in
+  vendor/ntfs-3g. No FUSE or unix_io component is linked in the firmware.
+  Combined NTFS-enabled binaries are distributed under GPL-2.0-or-later with
+  corresponding buildable sources. This does not remove MIT permissions on
+  separately identifiable original MultiOS components.
+  NTFS-3G bridge files identify GPL-2.0-or-later explicitly.
+- ports/ntfs3g uses host C headers for declarations when cross-compiling x64,
+  but links no glibc, Linux kernel, FUSE, syscall layer or host shared library
+  into BOOTX64.EFI. Runtime symbol audit and firmware tests are included.
+- GNU-EFI components retain their original licenses as listed below.
+
+Upstream provenance and file hashes: vendor/*/UPSTREAM.json.
+
+gnu-efi-3.0.11/gnuefi/crt0-efi-x86_64.S
+/* crt0-efi-x86_64.S - x86_64 EFI startup code.
+   Copyright (C) 1999 Hewlett-Packard Co.
+	Contributed by David Mosberger <davidm@hpl.hp.com>.
+   Copyright (C) 2005 Intel Co.
+	Contributed by Fenghua Yu <fenghua.yu@intel.com>.
+
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions
+    are met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials
+      provided with the distribution.
+    * Neither the name of Hewlett-Packard Co. nor the names of its
+      contributors may be used to endorse or promote products derived
+      from this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+    CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+    INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+    DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
+    BE LIABLE FOR ANYDIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+    OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+    PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
+    TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
+    THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+    SUCH DAMAGE.
+*/
+
+gnu-efi-3.0.11/gnuefi/reloc_x86_64.c
+/* reloc_x86_64.c - position independent x86_64 ELF shared object relocator
+   Copyright (C) 1999 Hewlett-Packard Co.
+	Contributed by David Mosberger <davidm@hpl.hp.com>.
+   Copyright (C) 2005 Intel Co.
+	Contributed by Fenghua Yu <fenghua.yu@intel.com>.
+
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions
+    are met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials
+      provided with the distribution.
+    * Neither the name of Hewlett-Packard Co. nor the names of its
+      contributors may be used to endorse or promote products derived
+      from this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+    CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+    INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+    DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
+    BE LIABLE FOR ANYDIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+    OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+    PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
+    TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
+    THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+    SUCH DAMAGE.
+*/
+
+gnu-efi-3.0.11/lib/print.c
+/*++
+
+Copyright (c) 1998  Intel Corporation
+
+Module Name:
+
+    print.c
+
+Abstract:
+
+
+
+
+Revision History
+
+--*/
+
+gnu-efi-3.0.11/lib/init.c
+/*++
+
+Copyright (c) 1998  Intel Corporation
+
+Module Name:
+
+
+Abstract:
+
+
+
+
+Revision History
+
+--*/
+
+Unicode filename case data: lib/unicode_upcase.h is the 874 non-identity
+BMP pairs decoded from the pre-existing tools/upcase.bin recommended exFAT
+upcase mapping. No host locale or Unicode library is linked. exFAT and NTFS
+use their volume-specific tables instead. FAT32 uses this fixed BMP mapping
+as a documented interoperability policy, not a claim about every OEM code page.

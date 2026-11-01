@@ -1,0 +1,45 @@
+/* vm2 studios | t.me/v2vproj — MultiOS / MultiPulti */
+/* INTEGRATION TEMPLATE, not a driver/BSP and not included in the build.
+ * Implement board startup/linker/memory/interrupts and ALL board_* symbols.
+ * Initial block support is intentionally read-only; no fake write/flush.
+ */
+#include "multios/modules.h"
+extern void *board_context(void);
+extern u32 board_sector_count(void *);
+extern int board_read512(void *,u32,u8 *);
+extern void board_putc(void *,char);
+extern int board_key(void *); /* ASCII or MultiOS key events; -1 EOF */
+extern void board_stop(void *);
+extern void board_fatal(const char *);
+static int output_open(void *ctx,const char *options,MultiDevice *d) {
+    if (*options) return INVALID;
+    d->output=(MultiOutput){.ctx=ctx,.putc=board_putc}; return 0;
+}
+static int input_open(void *ctx,const char *options,MultiDevice *d) {
+    if (*options) return INVALID;
+    d->input=(MultiInput){.ctx=ctx,.getc=board_key}; return 0;
+}
+static int block_open(void *ctx,const char *options,MultiDevice *d) {
+    if (*options) return INVALID;
+    d->block=(MultiBlock){.ctx=ctx,.sectors=board_sector_count(ctx),
+        .sector_bytes=512,.read=board_read512,.writable=0}; return 0;
+}
+static int power_open(void *ctx,const char *options,MultiDevice *d) {
+    if (*options) return INVALID;
+    d->power=(MultiPower){.ctx=ctx,.stop=board_stop}; return 0;
+}
+static const MultiDriver board_drivers[]={
+    MULTI_DRIVER("board-output",MULTI_OUTPUT,"REPLACE: actual display/UART",output_open,0),
+    MULTI_DRIVER("board-input",MULTI_INPUT,"REPLACE: actual keys/UART",input_open,0),
+    MULTI_DRIVER("board-block",MULTI_BLOCK,"REPLACE: actual block controller, RO",block_open,0),
+    MULTI_DRIVER("board-power",MULTI_POWER,"REPLACE: actual stop",power_open,0)
+};
+static const MultiDriver *const registry[]={&board_drivers[0],&board_drivers[1],&board_drivers[2],&board_drivers[3]};
+static const MultiProfile profile={.id={"board-output","board-input","board-block","board-power"},.osk=0};
+void multios_board_entry(void) {
+    /* board_context must remain valid until shutdown; no stack temporaries. */
+    int r=multi_modules_start(registry,4,&profile,board_context(),
+        "REPLACE: exact board name","REPLACE: CPU and ABI","REPLACE: tested capabilities\n");
+    if (r<0) { board_fatal(multi_modules_error()); return; }
+    shell();
+}

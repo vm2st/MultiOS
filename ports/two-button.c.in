@@ -1,0 +1,48 @@
+/* MultiOS / MultiPulti | vm2 studios | t.me/v2vproj
+ * UNPUBLISHED DEVELOPMENT TEMPLATE, not a tested BSP or a ready ROM.
+ * Implement the board_* functions, startup and linker script for your board.
+ * This adapter needs no keyboard, UART, mouse, RTC, FPU or general timer API.
+ */
+#include "multios/hal.h"
+#include "multios/buttons.h"
+extern void board_text_putc(void *, char);
+/* Draw the OSK using multi_osk_label/columns. Any display resolution/layout;
+ * selected row/column and shift are authoritative. May use a framebuffer,
+ * LCD or firmware. Keep command output and panel from overwriting each other. */
+extern void board_osk(void *, int enabled, int row, int col, int shift);
+/* Blocking debounced level sampler: bits NEXT=1, SELECT=2, released=0.
+ * Must observe release states, not only press notifications. No -1 EOF. */
+extern unsigned board_buttons_wait_sample(void);
+/* Set to 3 only if a real third button is wired to bit 4 (PREVIOUS). */
+#ifndef MULTIOS_BOARD_BUTTON_COUNT
+#define MULTIOS_BOARD_BUTTON_COUNT 2
+#endif
+/* Sector 0 of this device is the exFAT volume or MBR recognised by fs_mount.
+ * May be a fixed read-only ROM image: removable storage is not required. */
+extern int board_read_sector(void *, u32 lba, u8 *sector);
+extern u32 board_sector_count(void);
+extern void board_stop(void *);
+static MultiButtons buttons;
+static int two_keys(void *ctx) {
+    (void)ctx;
+    for (;;) {
+        int e = multi_buttons_update(&buttons, board_buttons_wait_sample());
+        if (e != -2) return e;
+    }
+}
+void multios_two_button_entry(void) {
+    if (multi_buttons_init(&buttons, MULTIOS_BOARD_BUTTON_COUNT)<0) { board_stop(0); return; }
+    MultiHal h = {
+        .abi=MULTIOS_HAL_ABI,
+        .name="REPLACE: board name / vm2 studios",
+        .architecture="REPLACE: actual ISA and ABI",
+        .block={.sector_bytes=512,.read=board_read_sector,.writable=0},
+        .console={.putc=board_text_putc,.getc=two_keys,.osk=board_osk},
+        .stop=board_stop,
+        .drivers="Board display + two buttons + read-only block adapter\n"
+    };
+    h.block.sectors=board_sector_count();
+    if (multi_hal_bind(&h)<0) { board_stop(0); return; }
+    if (multi_osk_enable(1)<0) { board_stop(0); return; }
+    shell();
+}
