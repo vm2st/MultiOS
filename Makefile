@@ -225,7 +225,7 @@ test: test-two-buttons
 .PHONY: test-hid test-editor
 build/hid-test: tests/hid_test.c core/hid.c include/multios/hid.h include/multios/osk.h | build
 	$(CC) $(COMMON) -O2 tests/hid_test.c core/hid.c -o $@
-build/editor-test: tests/editor_test.c core/editor.c lib/util.c lib/unicode.h include/multios/editor.h | build
+build/editor-test: tests/editor_test.c core/editor.c lib/util.c lib/unicode.h include/multios/editor.h include/multios/osk.h | build
 	$(CC) $(COMMON) -O2 tests/editor_test.c core/editor.c lib/util.c -o $@
 test-hid: build/hid-test
 	./build/hid-test
@@ -562,3 +562,81 @@ test-usb-bulk-hosts: | build
 
 # Changes to the header-only NTFS RO-view cache must invalidate consumers.
 $(KOBJ) $(EOBJ) build/multios-host build/multios-sanitize-host build/storage-tx-test build/storage-tx-sanitize: include/multios/read_cache.h
+
+# Test actual FatFs bridge callbacks; fake HAL, no third-party engine stubs in production.
+build/fatfs-bridge-test: tests/fatfs_bridge_test.c lib/fatfs_adapter.c | build
+	$(CC) -std=c11 -I. -Iinclude -Ilib -Ivendor/fatfs/port -O1 -g -ffunction-sections -fdata-sections -fsanitize=address,undefined -fno-pie -no-pie $< -Wl,--gc-sections -o $@
+.PHONY: test-fatfs-bridge
+test-fatfs-bridge: build/fatfs-bridge-test
+	./build/fatfs-bridge-test
+
+build/fs-unlock-probe: tests/fs_unlock_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/fs_unlock_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+
+build/fs-full-probe: tests/fs_full_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/fs_full_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/fs-full-probe-sanitize: tests/fs_full_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie tests/fs_full_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+
+
+build/unlock-contract-test: tests/unlock_contract_test.c lib/fs.c tests/fs64_mock.registry.h | build
+	$(CC) -std=c11 -Ilib -Iinclude -I. -DMULTIOS_STORAGE_TX -DMULTIOS_FS_REGISTRY='"../tests/fs64_mock.registry.h"' -O1 -g -ffunction-sections -fdata-sections -fsanitize=address,undefined -fno-pie -no-pie tests/unlock_contract_test.c lib/fs.c -Wl,--gc-sections -o $@
+.PHONY: test-unlock-contract
+test-unlock-contract: build/unlock-contract-test
+	./build/unlock-contract-test
+
+build/fat32-active-probe: tests/fat32_active_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/fat32_active_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/fat32-active-probe-sanitize: tests/fat32_active_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie tests/fat32_active_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+
+# Write semantics use the actual production adapters, not a mock filesystem.
+build/fs-writeops-probe: tests/fs_writeops_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/fs_writeops_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/fs-writeops-probe-sanitize: tests/fs_writeops_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie tests/fs_writeops_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+build/writeops-tx-test: tests/writeops_tx_test.c tests/writeops_actions.h tests/storage_tx_test.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/writeops_tx_test.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/writeops-tx-sanitize: tests/writeops_tx_test.c tests/writeops_actions.h tests/storage_tx_test.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie tests/writeops_tx_test.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+
+build/ntfs-case-probe: tests/ntfs_case_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/ntfs_case_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/ntfs-case-probe-sanitize: tests/ntfs_case_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie tests/ntfs_case_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+
+build/ntfs-case-tx-test: tests/ntfs_case_tx_test.c tests/ntfs_case_actions.h tests/storage_tx_test.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/ntfs_case_tx_test.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/ntfs-case-tx-sanitize: tests/ntfs_case_tx_test.c tests/ntfs_case_actions.h tests/storage_tx_test.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie tests/ntfs_case_tx_test.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+
+.PHONY: test-pc-console
+build/pc-console-test: tests/pc_console_test.c drivers/pc-bios/text.c lib/util.c | build
+	$(CC) $(COMMON) -O1 -g -fsanitize=address,undefined -fno-pie -no-pie tests/pc_console_test.c lib/util.c -o $@
+test-pc-console: build/pc-console-test
+	./build/pc-console-test
+test: test-pc-console
+
+.PHONY: test-input-loss
+build/input-loss-test: tests/input_loss_test.c core/hid.c core/editor.c core/osk.c lib/util.c include/multios/osk.h | build
+	$(CC) $(COMMON) -O1 -g -fsanitize=address,undefined -fno-pie -no-pie tests/input_loss_test.c core/hid.c core/editor.c core/osk.c lib/util.c -o $@
+test-input-loss: build/input-loss-test
+	./build/input-loss-test
+test: test-input-loss
+
+.PHONY: test-input-loss-shell
+build/input-loss-shell: tests/input_loss_shell.c $(LIB) Makefile lib/multi.h $(wildcard include/multios/*.h) | build
+	$(CC) $(COMMON) -O2 tests/input_loss_shell.c $(LIB) -o $@
+test-input-loss-shell: build/input-loss-shell build/multios.img
+	./build/input-loss-shell build/multios.img
+test: test-input-loss-shell
+
+.PHONY: test-input-sanitize
+build/hid-sanitize: tests/hid_test.c core/hid.c include/multios/hid.h include/multios/osk.h | build
+	$(CC) $(COMMON) -O1 -g -fsanitize=address,undefined -fno-pie -no-pie tests/hid_test.c core/hid.c -o $@
+build/editor-sanitize: tests/editor_test.c core/editor.c lib/util.c lib/unicode.h include/multios/editor.h include/multios/osk.h | build
+	$(CC) $(COMMON) -O1 -g -fsanitize=address,undefined -fno-pie -no-pie tests/editor_test.c core/editor.c lib/util.c -o $@
+test-input-sanitize: build/hid-sanitize build/editor-sanitize
+	./build/hid-sanitize
+	./build/editor-sanitize
+test: test-input-sanitize

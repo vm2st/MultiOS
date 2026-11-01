@@ -7,6 +7,7 @@ void *mzero(void *p,u32 n){return memset(p,0,n);}void mcopy(void *d,const void *
 static MultiHid h;
 static int stroke(int usage,int modifiers){u8 r[8]={0};multi_hid_report(&h,r,8);r[0]=modifiers;r[2]=usage;assert(multi_hid_report(&h,r,8)==0);return multi_hid_get(&h);}
 int main(void){
+ multi_hid_reset(&h);assert(stroke(89,0)==MULTI_KEY_END);assert(stroke(95,0)==MULTI_KEY_HOME);assert(stroke(99,0)==MULTI_KEY_DELETE);
  multi_hid_reset(&h);assert(multi_hid_get(&h)==-2);assert(multi_hid_report(0,0,0)==INVALID);
  for(int i=0;i<26;i++){assert(stroke(4+i,0)=='a'+i);assert(stroke(4+i,2)=='A'+i);assert(stroke(4+i,1)==i+1);}
  for(int i=0;i<10;i++){assert(stroke(30+i,0)=="1234567890"[i]);assert(stroke(30+i,0x20)=="!@#$%^&*()"[i]);}

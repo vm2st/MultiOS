@@ -4,8 +4,9 @@
 #include "multi.h"
 enum { MULTI_KEY_UP = 256, MULTI_KEY_DOWN, MULTI_KEY_LEFT, MULTI_KEY_RIGHT, MULTI_KEY_OSK,
        MULTI_KEY_NEXT, MULTI_KEY_SELECT, MULTI_KEY_PREVIOUS,
-       MULTI_KEY_HOME, MULTI_KEY_END, MULTI_KEY_DELETE, MULTI_KEY_HISTORY_PREV, MULTI_KEY_HISTORY_NEXT };
-/* NEXT: cycle all cells row-major; SELECT: activate. Either opens a hidden
+       MULTI_KEY_HOME, MULTI_KEY_END, MULTI_KEY_DELETE, MULTI_KEY_HISTORY_PREV, MULTI_KEY_HISTORY_NEXT, MULTI_KEY_INPUT_LOST };
+/* INPUT_LOST: a dropped input batch invalidates the current command line.
+ * NEXT: cycle all cells row-major; SELECT: activate. Either opens a hidden
  * panel without emitting a character. PREVIOUS is optional for 3+ buttons;
  * it scans backward over the same cells, and also opens a hidden panel. No third key or press timing required. */
 int multi_osk_enable(int enabled);

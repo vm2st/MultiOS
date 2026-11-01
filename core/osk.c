@@ -14,6 +14,8 @@ int multi_osk_enable(int on) {
     const MultiHal *h = multi_hal();
     if (on && (!h || !h->console.osk))
         return UNSUP;
+    if (enabled == !!on)
+        return 0; /* Idempotent: do not erase console rows without a transition. */
     enabled = !!on;
     redraw();
     return 0;
@@ -44,6 +46,8 @@ const char *multi_osk_label(int r, int c, int sh) {
     return ch;
 }
 int multi_osk_process(int key) {
+    if (key == MULTI_KEY_INPUT_LOST)
+        return key; /* Safety event must bypass OSK key filtering. */
     if (key == MULTI_KEY_NEXT || key == MULTI_KEY_SELECT || key == MULTI_KEY_PREVIOUS) {
         if (!enabled) {
             /* First press only opens; preserves selection and shift. */

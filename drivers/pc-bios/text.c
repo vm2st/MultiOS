@@ -57,7 +57,7 @@ static void pc_putc(void *ctx, char c) {
         serial(c); /* Preserve UTF-8 on COM1, independent of VGA's limited font. */
         u32 scalar;int decoded=multi_utf8_feed(&decoder,(u8)c,&scalar);
         if(!decoded)return;
-        if(decoded<0){decoder=(MultiUtf8State){0};scalar='?';}
+        if(decoded<0){decoder=(MultiUtf8State){0};scalar=(u8)c<128?(u8)c:'?';}
         vga[row * 80 + col++] = 0x0700 | (scalar<128?scalar:'?');
         if (col == 80) {
             col = 0;
@@ -80,14 +80,17 @@ static void paneltext(int x, int y, const char *s, u16 a) {
 }
 static void pc_osk(void *ctx, int on, int selected_row, int selected_col, int shift) {
     (void)ctx;
+    /* Move the live prompt into the smaller viewport before covering it. */
+    if (on && row >= 18) {
+        int delta = row - 17;
+        for (int i = 0; i < 18 * 80; i++)
+            vga[i] = vga[i + delta * 80];
+        row = 17; /* Keep the horizontal editor position. */
+    }
     for (int y = 18; y < 25; y++)
         for (int x = 0; x < 80; x++)
             vga[y * 80 + x] = 0x0720;
     if (on) {
-        if (row >= 18) {
-            row = 17;
-            col = 0;
-        }
         paneltext(1, 18, "OSK | F6: Next | F7: Select | F5: Previous (optional)", 0x1f00);
         for (int r = 0; r < 5; r++)
             for (int c = 0; c < multi_osk_columns(r); c++) {

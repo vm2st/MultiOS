@@ -28,6 +28,19 @@ static void printat(int col, int row, const char *s, int selected) {
 }
 static void uefi_osk(void *ctx, int on, int sr, int sc, int sh) {
     (void)ctx;
+    if (on && y >= 18) {
+        int delta = y - 17;
+        for (int r = 0; r < 18; r++)
+            mcopy(cells[r], cells[r + delta], sizeof(cells[r]));
+        y = 17; /* Preserve x and the current editor line. */
+        for (int r = 0; r < 18; r++) {
+            CHAR16 line[80];
+            for (int i = 0; i < 79; i++)
+                line[i] = cells[r][i] ? cells[r][i] : ' ';
+            line[79] = 0;
+            printwide(0, r, line, 0);
+        }
+    }
     for (int r = 18; r < 25; r++)
         mzero(cells[r], sizeof(cells[r]));
     char blank[80];
@@ -37,10 +50,6 @@ static void uefi_osk(void *ctx, int on, int sr, int sc, int sh) {
     for (int r = 18; r < 25; r++)
         printat(0, r, blank, 0);
     if (on) {
-        if (y >= 18) {
-            y = 17;
-            x = 0;
-        }
         printat(1, 18, "OSK | F6: Next | F7: Select | F5: Previous (optional)", 0);
         for (int r = 0; r < 5; r++)
             for (int c = 0; c < multi_osk_columns(r); c++) {

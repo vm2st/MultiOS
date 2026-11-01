@@ -8,7 +8,7 @@ def run(label,controller='piix3-usb-uhci',mouse=False,usb_only=True):
  img=w/'boot.img';shutil.copyfile(ROOT/('build/usb-only-proof.img' if usb_only else 'build/multios.img'),img)
  sock=w/'qmp.sock'
  if sock.exists():sock.unlink()
- args=[os.environ.get('QEMU','/data/qemu-legacy/compiled/qemu-system-x86_64'),'-machine','pc','-accel','tcg','-cpu','486','-m','32M','-drive',f'file={img},format=raw,if=ide,index=0','-device',controller+',id=uhci','-device','usb-kbd,id=kbd,bus=uhci.0,port='+('2' if mouse else '1'),'-serial','stdio','-display','none','-monitor','none','-qmp',f'unix:{sock},server=on,wait=off','-device','isa-debug-exit,iobase=0xf4,iosize=0x04','-no-reboot']
+ args=[os.environ.get('QEMU','qemu-system-x86_64'),'-machine','pc','-accel','tcg','-cpu','486','-m','32M','-drive',f'file={img},format=raw,if=ide,index=0','-device',controller+',id=uhci','-device','usb-kbd,id=kbd,bus=uhci.0,port='+('2' if mouse else '1'),'-serial','stdio','-display','none','-monitor','none','-qmp',f'unix:{sock},server=on,wait=off','-device','isa-debug-exit,iobase=0xf4,iosize=0x04','-no-reboot']
  if mouse:args.extend(['-device','usb-mouse,bus=uhci.0,port=1'])
  p=subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
  data=bytearray();q=None

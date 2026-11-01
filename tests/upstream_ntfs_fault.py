@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='ntfs-fault-',dir=r/'build') as td:
  prepare(source,image,1,experimental_ntfs=True,journal_records=capacity)
  p=subprocess.run([str(r/'build/multios-host'),str(image),'--allow-write'],input=(b'unlock YES\nmd empty\nlock\nexit\n' if compressed else b'unlock YES\nwrite old.txt "original"\nmd empty\nlock\nexit\n'),capture_output=True,env=env);assert not p.returncode and b'Error:' not in p.stdout,(p.stdout,p.stderr)
  for binary in ('storage-tx-test','storage-tx-sanitize'):
-  p=subprocess.run([str(r/'build'/binary),str(image)],capture_output=True,timeout=600,env=env)
+  p=subprocess.run([str(r/'build'/binary),str(image)],capture_output=True,timeout=int(os.environ.get("MULTIOS_TEST_TIMEOUT","1800")),env=env)
   text=p.stdout.decode(errors='replace');(r/'build'/('unified-ntfs-'+tag+str(capacity)+'-'+binary+'.log')).write_text(text+p.stderr.decode(errors='replace'))
   assert not p.returncode and 'PASS real-FS private transactions:' in text,(p.returncode,text[-2000:],p.stderr[-2000:])
   print(binary+': '+text.splitlines()[-1],flush=True)

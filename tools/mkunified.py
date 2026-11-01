@@ -14,7 +14,7 @@ DATA_START=FAT_START+FAT_SECTORS
 def sources_zip(dest):
     with zipfile.ZipFile(dest,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
         for p in sorted(ROOT.iterdir()):
-            if p.is_file() and (p.suffix in ('.md','.sh','.ps1') or p.name in ('Makefile','LICENSE','THIRD_PARTY_NOTICES.txt')):
+            if p.is_file() and (p.suffix in ('.md','.sh','.ps1') or p.name in ('Makefile','LICENSE','THIRD_PARTY_NOTICES.txt','.gitignore')):
                 z.write(p,'MultiOS/'+p.name)
         for folder in ('core','drivers','include','lib','platform','ports','profiles','tools','tests','third_party','vendor'):
             for p in sorted((ROOT/folder).rglob('*')):

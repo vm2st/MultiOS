@@ -17,6 +17,7 @@ static int insert(MultiEdit *e,const char *s,u32 n){
 }
 int multi_edit_key(MultiEdit *e,int k){
  if(!e||e->length>=MULTI_EDIT_CAPACITY||e->cursor>e->length)return 0;
+ if(k==MULTI_KEY_INPUT_LOST){e->pending_bytes=0;e->overflow=1;return 0;}
  if(k>=128&&k<256){
   if((k&0xc0)!=0x80){if(e->pending_bytes)e->overflow=1;e->pending_bytes=0;}
   if(!e->pending_bytes&&(k<0xc2||k>0xf4)){e->overflow=1;return 0;}

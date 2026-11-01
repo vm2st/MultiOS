@@ -1,5 +1,6 @@
-# GPL combined-build experimental profile: x64 UEFI + host harness ONLY.
-# BIOS retains the smaller legacy NTFS reader; do not use this profile for all.
+# GPL combined-build experimental profile for x64 UEFI + host harness.
+# Extended BIOS NTFS/FatFs RW uses the isolated `make bios-rw` builder.
+# Ordinary `make all` is NOT that extended BIOS build and has a smaller limit.
 include profiles/filesystems-fatfs.mk
 FS_DRIVERS += lib/ntfs3g_adapter.c
 FS_TX_CFLAGS += -DMULTIOS_NTFS3G -DHAVE_CONFIG_H -D_GNU_SOURCE -Iports/ntfs3g -Ivendor/ntfs-3g/include/ntfs-3g

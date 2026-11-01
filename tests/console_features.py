@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory() as td:
  s=run('unlock YES\nwrite pages.txt "page01"\n'+''.join(f'append pages.txt "page{i:02}"\n' for i in range(2,31))+'exit\n');check('Error:' not in s,s)
  s=run('more pages.txt\n \n \nexit\n');check('-- MORE:' in s and 'page30' in s,s)
  s=run('more pages.txt\nq\nexit\n');check('page01' in s and 'page30' not in s,s)
- s=run('usb\ndevices\nexit\n');check('Native PCI scan unavailable' in s,s);check('No native UHCI controller active' in s,s)
+ s=run('usb\ndevices\nexit\n');check('Native PCI scan unavailable' in s,s);check('No native USB controller active' in s,s)
  part=td/'data.exfat'
  with image.open('rb') as f,part.open('wb') as o:f.seek(2048*512);o.write(f.read())
  p=subprocess.run(['fsck.exfat','-n',str(part)],text=True,capture_output=True);check(p.returncode==0,p.stdout+p.stderr);logs.append(p.stdout)

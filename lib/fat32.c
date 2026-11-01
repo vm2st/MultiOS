@@ -1,5 +1,6 @@
 /* vm2 studios | t.me/v2vproj — bounded FAT32/VFAT driver for MultiPulti.
- * 512-byte logical sectors; mirrored FATs; ASCII LFN writes. No journal.
+ * 512-byte logical sectors; FAT32 geometry/audit and legacy writer.
+ * FatFs profile also supports the ExtFlags-selected nonmirrored FAT.
  * No repair or automatic dirty-bit clearing. All mutation errors poison mount.
  */
 #include "fs_backend.h"
@@ -59,7 +60,9 @@ static int fatset(u32 c, u32 n) {
     if (c >= vol.clusters + 2)
         return BAD;
     u8 b[512];
-    for (u32 i = 0; i < fats; i++) {
+    u32 first = (vol.flags & 1) ? active : 0;
+    u32 end = (vol.flags & 1) ? active + 1 : fats;
+    for (u32 i = first; i < end; i++) {
         u32 l = vol.fat + i * fat_size + c / 128;
         TRY(rd(l, b));
         u32 o = (c % 128) * 4;
@@ -317,7 +320,8 @@ int fat32_mount_at(u32 base, u32 limit) {
     u8 b[512];
     TRY(disk_read(base, b));
     if (b[510] != 0x55 || b[511] != 0xaa || r16(b + 11) != 512 || !b[13] || b[13] > 128 ||
-        (b[13] & (b[13] - 1)) || r16(b + 17) || r16(b + 19) || r16(b + 22) || r16(b + 42))
+        (b[13] & (b[13] - 1)) || r16(b + 17) || r16(b + 19) || r16(b + 22) || r16(b + 42) ||
+        (r16(b + 40) & 0xff70u))
         return UNSUP;
     reserved = r16(b + 14);
     fats = b[16];
@@ -361,6 +365,15 @@ int fat32_mount_at(u32 base, u32 limit) {
         vol.flags |= 2;
     u32 size;
     TRY(chainsize(vol.root, &size));
+    return 0;
+}
+int fat32_fat_layout(u32 *start,u32 *length,u32 *copies) {
+    if (!start || !length || !copies) return INVALID;
+    if (!vol.mounted || vol.kind != FS_FAT32 || !fat_size || !fats || active >= fats)
+        return BAD;
+    *start = vol.fat + active * fat_size;
+    *length = fat_size;
+    *copies = (vol.flags & 1) ? 1 : fats;
     return 0;
 }
 static int claim(u32 c, u32 expected, int directory) {
@@ -426,11 +439,16 @@ int fat32_unlock(void) {
         return READONLY;
     if (vol.poisoned || vol.flags & 2)
         return BAD;
-    if (vol.flags & 1 || vol.clusters > FAT_AUDIT)
+    if (vol.clusters > FAT_AUDIT)
         return UNSUP;
+#ifndef MULTIOS_FATFS
+    /* Legacy mutation path is not certified for nonmirrored FAT32. */
+    if (vol.flags & 1) return UNSUP;
+#endif
     u8 b[512], other[512];
     cache_sector = EOC;
-    /* Refuse disagreeing FAT copies and backup geometry instead of repairing. */
+    /* Mirrored copies must agree. An inactive nonmirrored FAT may be stale;
+     * neither compare it nor repair it. Backup geometry still must agree. */
     if (backup) {
         TRY(rd(0, b));
         TRY(rd(backup, other));
@@ -448,9 +466,11 @@ int fat32_unlock(void) {
                 return BAD;
         }
     }
-    for (u32 k = 0; k < fats; k++)
+    u32 selected = (vol.flags & 1) ? active : 0;
+    u32 copies = (vol.flags & 1) ? 1 : fats;
+    for (u32 k = 0; k < copies; k++)
         for (u32 j = 0; j < (vol.clusters + 129u) / 128u; j++) {
-            TRY(rd(vol.fat + j, b));
+            TRY(rd(vol.fat + selected * fat_size + j, b));
             if (k) {
                 TRY(rd(vol.fat + k * fat_size + j, other));
                 for (u32 i = 0; i < 512; i++)

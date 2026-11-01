@@ -815,7 +815,7 @@ void shell(void) {
         }
         if(!running)break;
         u32 n=edit.length;mcopy(line,edit.text,n+1);
-        if(edit.overflow){out("Error: line too long or invalid/incomplete UTF-8; not executed\n");continue;}
+        if(edit.overflow){out("Error: input lost, line too long or invalid/incomplete UTF-8; not executed\n");continue;}
         if (!n)
             continue;
         char saved[512];

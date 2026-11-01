@@ -536,7 +536,7 @@ static int ntfs_priority(u8 t){return t==7?100:0;}
 #ifdef MULTIOS_NTFS3G
 const MultiFsDriver multi_fs_ntfs={
  .abi=MULTIOS_FS_ABI,.size=sizeof(MultiFsDriver),.kind=FS_NTFS,.id="ntfs",.name="NTFS",
- .capabilities=MULTIOS_FS_READ|MULTIOS_FS_WRITE|MULTIOS_FS_EXPERIMENTAL|MULTIOS_FS_RANDOM_IO|MULTIOS_FS_NAMED_STREAMS|MULTIOS_FS_HARDLINKS,
+ .capabilities=MULTIOS_FS_READ|MULTIOS_FS_WRITE|MULTIOS_FS_EXPERIMENTAL|MULTIOS_FS_RANDOM_IO|MULTIOS_FS_NAMED_STREAMS|MULTIOS_FS_HARDLINKS|MULTIOS_FS_EXACT_NAMES,
  .probe=ntfs_probe,.partition_priority=ntfs_priority,.mount=multi_ntfs3g_mount,
  .root=ntfs_root,.next=multi_ntfs3g_next,.read=multi_ntfs3g_read,.read64=multi_ntfs3g_read64,.name_equal=multi_ntfs3g_equal,.free=multi_ntfs3g_free,
  .unlock=multi_ntfs3g_unlock,.put=multi_ntfs3g_put,.remove=multi_ntfs3g_remove,.rename=multi_ntfs3g_rename,

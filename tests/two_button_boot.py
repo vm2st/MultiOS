@@ -12,7 +12,7 @@ def run(mode, previous=False):
  if sock.exists():sock.unlink()
  common=['-accel','tcg','-display','none','-monitor','none','-qmp',f'unix:{sock},server=on,wait=off','-no-reboot']
  if mode=='bios':
-  args=[os.environ.get('QEMU','/data/qemu-legacy/compiled/qemu-system-x86_64'),'-machine','pc','-cpu','486','-m','32M','-drive',f'file={image},format=raw,if=ide,index=0','-serial','stdio','-device','isa-debug-exit,iobase=0xf4,iosize=0x04',*common]
+  args=[os.environ.get('QEMU','qemu-system-x86_64'),'-machine','pc','-cpu','486','-m','32M','-drive',f'file={image},format=raw,if=ide,index=0','-serial','stdio','-device','isa-debug-exit,iobase=0xf4,iosize=0x04',*common]
  else:
   var=w/'vars.fd';shutil.copyfile('/usr/share/OVMF/OVMF_VARS.fd',var)
   args=[os.environ.get('QEMU_UEFI','/usr/bin/qemu-system-x86_64'),'-machine','q35','-m','256M','-drive','if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd','-drive',f'if=pflash,format=raw,file={var}','-device','qemu-xhci,id=xhci','-drive',f'if=none,format=raw,id=stick,file={image}','-device','usb-storage,drive=stick,bus=xhci.0,bootindex=1','-device','usb-kbd,bus=xhci.0','-serial','null','-serial','stdio',*common]

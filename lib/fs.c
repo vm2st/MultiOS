@@ -37,7 +37,7 @@ int multi_fs_validate(const MultiFsDriver *const *r, u32 n) {
         const MultiFsDriver *d = r[i];
         if (!d || d->abi != MULTIOS_FS_ABI || d->size != sizeof(*d) || d->kind < 0 ||
             !id_ok(d->id) || !d->name || !d->name[0] || !(d->capabilities & MULTIOS_FS_READ) ||
-            d->capabilities & ~63u || !d->probe || !d->partition_priority || !d->mount || !d->root ||
+            d->capabilities & ~127u || !d->probe || !d->partition_priority || !d->mount || !d->root ||
             !d->next || !d->read || !d->read64 || !d->name_equal || !d->free)
             return INVALID;
         if ((d->capabilities & MULTIOS_FS_WRITE) &&
@@ -223,13 +223,37 @@ int fs_unlock(void) {
 #ifdef MULTIOS_STORAGE_TX
     if(!multi_storage_matches(vol.base,vol.sectors))return READONLY;
 #endif
-    return d->unlock();
+    if (!disk_writable()) return READONLY;
+    u32 base=vol.base,sectors=vol.sectors;
+    int kind=vol.kind;
+    int r=d->unlock();
+    /* A module's success code alone cannot grant write access. Preserve the
+     * selected volume and require a healthy provider + undo binding. */
+    if(r<0){vol.writable=0;return r;}
+    if(r>0||!vol.mounted||vol.poisoned||!vol.writable||!disk_writable()||
+       vol.kind!=kind||vol.base!=base||vol.sectors!=sectors||current()!=d){
+        vol.writable=0;return r>0?IO:BAD;
+    }
+#ifdef MULTIOS_STORAGE_TX
+    if(!multi_storage_matches(base,sectors)){vol.writable=0;return READONLY;}
+#endif
+    return 0;
+}
+static int lookup(Stream,const char *,Entry *,int);
+static int resolve(const char *,Stream *,Entry *,int *,int);
+/* Run before opening a backend volume: enumeration may reset its arena. */
+static int check_path(const char *path,int missing_ok){
+    if(!(fs_capabilities()&MULTIOS_FS_EXACT_NAMES))return 0;
+    Stream parent;Entry e;int root;int r=resolve(path,&parent,&e,&root,1);
+    return r==NOTFOUND&&missing_ok?0:r;
 }
 int fs_put(const char *p, const u8 *b, u32 n, int m, const char *s) {
     if (!p || m < 0 || m > 4 || (n && !b && m != 3 && m != 4) || (m == 4 && !s))
         return INVALID;
     if (!write_allowed())
         return READONLY;
+    TRY(check_path(p,1));
+    if(m==4){MultiFile64 f;TRY(fs_open64(s,&f));}
     TRY(invalidate_views());
 #ifdef MULTIOS_STORAGE_TX
     TRY(multi_storage_begin());
@@ -298,6 +322,7 @@ int fs_link(const char *source,const char *newpath){
     if(!source||!newpath)return INVALID;if(!write_allowed())return READONLY;
     const MultiFsDriver*d=current();if(!(d->capabilities&MULTIOS_FS_HARDLINKS))return UNSUP;
     MultiFile64 f;TRY(fs_open64(source,&f));Stream parent;char name[PATHMAX];TRY(fs_parent(newpath,&parent,name));TRY(multi_name_valid(name));
+    TRY(check_path(newpath,1));
     TRY(invalidate_views());
 #ifdef MULTIOS_STORAGE_TX
     TRY(multi_storage_begin());return multi_storage_finish(d->link(source,newpath));
@@ -310,6 +335,7 @@ int fs_remove(const char *p, int d) {
         return INVALID;
     if (!write_allowed())
         return READONLY;
+    TRY(check_path(p,0));
     TRY(invalidate_views());
 #ifdef MULTIOS_STORAGE_TX
     TRY(multi_storage_begin());
@@ -323,6 +349,13 @@ int fs_rename(const char *p, const char *n) {
         return INVALID;
     if (!write_allowed())
         return READONLY;
+    if(fs_capabilities()&MULTIOS_FS_EXACT_NAMES){
+        Stream parent;Entry src,dst;int root;
+        TRY(resolve(p,&parent,&src,&root,1));TRY(multi_name_valid(n));
+        int r=lookup(parent,n,&dst,1);
+        if(r<0&&r!=NOTFOUND)return r;
+        if(!r&&!streq(src.name,dst.name))return EXISTS;
+    }
     TRY(invalidate_views());
 #ifdef MULTIOS_STORAGE_TX
     TRY(multi_storage_begin());
@@ -337,13 +370,23 @@ static int lookup(Stream d, const char *n, Entry *e, int wide) {
     u32 p = 0;
     int r;
     u32 units;TRY(multi_utf8_to16(n,0,255,&units));
+    int strict=(fs_capabilities()&MULTIOS_FS_EXACT_NAMES)!=0;
+    Entry exact,fold;u32 exacts=0,folds=0;
     while ((r = fs_next(d, &p, e)) > 0) {
         int equal=0;
         if(e->name_valid||e->ascii){equal=current()->name_equal(e->name,n);if(equal<0)return equal;}
-        if(equal || (e->alias[0] && same(e->alias,n)))
-            return (e->large && (!wide || (e->large&~MULTI_ENTRY_SIZE64) || (e->attr&ATTR_DIR))) ? UNSUP : 0;
+        if(equal || (e->alias[0] && same(e->alias,n))){
+            if(!strict)return (e->large && (!wide || (e->large&~MULTI_ENTRY_SIZE64) || (e->attr&ATTR_DIR))) ? UNSUP : 0;
+            if(streq(e->name,n)){exact=*e;if(exacts<2)exacts++;}
+            if(folds<2)folds++;fold=*e;
+        }
     }
-    return r < 0 ? r : NOTFOUND;
+    if(r<0)return r;
+    if(!strict)return NOTFOUND;
+    if(exacts>1)return BAD;
+    if(exacts)*e=exact;
+    else {if(folds>1)return UNSUP;if(!folds)return NOTFOUND;*e=fold;}
+    return (e->large && (!wide || (e->large&~MULTI_ENTRY_SIZE64) || (e->attr&ATTR_DIR))) ? UNSUP : 0;
 }
 int fs_lookup(Stream d,const char *n,Entry *e){return lookup(d,n,e,0);}
 /* Paths passed by shell are absolute and normalized. */

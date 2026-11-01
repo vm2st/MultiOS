@@ -18,27 +18,34 @@ enum { MPFF_FAT32=FS_FAT32, MPFF_EXFAT=FS_EXFAT };
 #undef disk_write
 static FATFS ffvol;
 static int io_error;
+/* Preserve the first bridge failure for the entire disposable FatFs view.
+ * Cleanup must not issue new I/O or turn a failed mutation into a success. */
+static void latch_error(int r){if(r<0&&io_error>=0)io_error=r;}
 extern DWORD mpff_builtin_upcase(DWORD);
 extern int multi_exfat_upcase(u16,u16*);
 /* exFAT names MUST use this volume's $UpCase, not an unrelated Unicode table. */
 DWORD ff_wtoupper(DWORD c){
- if(vol.kind==FS_EXFAT&&c<65536){u16 v;int r=multi_exfat_upcase((u16)c,&v);if(r<0){io_error=r;return c;}return v;}
+ if(io_error<0)return c;
+ if(vol.kind==FS_EXFAT&&c<65536){u16 v;int r=multi_exfat_upcase((u16)c,&v);if(r<0){latch_error(r);return c;}return v;}
  return mpff_builtin_upcase(c);
 }
 DSTATUS mpff_disk_initialize(BYTE p){return p||!vol.mounted?STA_NOINIT:0;}
 DSTATUS mpff_disk_status(BYTE p){return mpff_disk_initialize(p)|(disk_writable()?0:STA_PROTECT);}
 DRESULT mpff_disk_read(BYTE p,BYTE*b,LBA_t l,UINT n){
- if(p||!n||l>=vol.sectors||n>vol.sectors-l)return RES_PARERR;
- for(UINT i=0;i<n;i++){int r=disk_read(vol.base+l+i,b+512u*i);if(r<0){io_error=r;return RES_ERROR;}}return RES_OK;
+ if(io_error<0)return RES_ERROR;
+ if(p||!b||!n||l>=vol.sectors||n>vol.sectors-l)return RES_PARERR;
+ for(UINT i=0;i<n;i++){int r=disk_read(vol.base+l+i,b+512u*i);if(r<0){latch_error(r);return RES_ERROR;}}return RES_OK;
 }
 DRESULT mpff_disk_write(BYTE p,const BYTE*b,LBA_t l,UINT n){
- if(p||!n||l>=vol.sectors||n>vol.sectors-l)return RES_PARERR;
+ if(io_error<0)return RES_ERROR;
+ if(p||!b||!n||l>=vol.sectors||n>vol.sectors-l)return RES_PARERR;
  if(!vol.writable)return RES_WRPRT;
- for(UINT i=0;i<n;i++){int r=disk_write(vol.base+l+i,b+512u*i);if(r<0){io_error=r;return RES_ERROR;}}return RES_OK;
+ for(UINT i=0;i<n;i++){int r=disk_write(vol.base+l+i,b+512u*i);if(r<0){latch_error(r);return RES_ERROR;}}return RES_OK;
 }
 DRESULT mpff_disk_ioctl(BYTE p,BYTE c,void*b){
+ if(io_error<0)return RES_ERROR;
  if(p)return RES_PARERR;
- if(c==CTRL_SYNC){int r=disk_flush();if(r<0){io_error=r;return RES_ERROR;}return RES_OK;}
+ if(c==CTRL_SYNC){int r=disk_flush();if(r<0){latch_error(r);return RES_ERROR;}return RES_OK;}
  if(!b)return RES_PARERR;
  if(c==GET_SECTOR_COUNT){*(LBA_t*)b=vol.sectors;return RES_OK;}
  if(c==GET_SECTOR_SIZE){*(WORD*)b=512;return RES_OK;}
@@ -51,15 +58,32 @@ static int error(FRESULT r){if(io_error<0)return io_error;
  case FR_DENIED:return NOSPACE;case FR_INVALID_NAME:case FR_INVALID_PARAMETER:return INVALID;
  case FR_NO_FILESYSTEM:return UNSUP;case FR_DISK_ERR:case FR_NOT_READY:return IO;default:return BAD;}
 }
+/* Upstream FatFs mounts FAT32 using FAT0 and mirrors to FAT1. Respect BPB
+ * ExtFlags without modifying upstream: adjust the disposable FATFS only AFTER
+ * its data/FSInfo geometry was computed from all physical FAT slots. */
+static int select_fat(void){
+ if(vol.kind!=FS_FAT32)return 0;
+ u32 start,length,copies;int r=fat32_fat_layout(&start,&length,&copies);if(r<0)return r;
+ if(ffvol.volbase || ffvol.fatbase!=vol.fat || ffvol.fsize!=length || !length ||
+    ffvol.database!=vol.heap || ffvol.dirbase!=vol.root || ffvol.csize!=vol.spc ||
+    ffvol.n_fatent!=vol.clusters+2 || start<ffvol.fatbase ||
+    (start-ffvol.fatbase)%length || (start-ffvol.fatbase)/length>=ffvol.n_fats ||
+    !copies || copies>ffvol.n_fats ||
+    ((copies>1)&&(start!=ffvol.fatbase)))return BAD;
+ ffvol.fatbase=start;ffvol.n_fats=(BYTE)copies;
+ return 0;
+}
 static int begin(void){
  if(!vol.mounted||!vol.writable||vol.poisoned)return READONLY;
  f_mount(0,"",0);mzero(&ffvol,sizeof ffvol);io_error=0;
  int r=error(f_mount(&ffvol,"",1));
  if(r==0&&((vol.kind==FS_FAT32&&ffvol.fs_type!=MPFF_FAT32)||(vol.kind==FS_EXFAT&&ffvol.fs_type!=MPFF_EXFAT)))r=BAD;
+ if(!r)r=select_fat();
  return r;
 }
 static int finish(int result){
  f_mount(0,"",0);
+ if(io_error<0)return io_error;
  if(result<0)return result;
  u32 base=vol.base,n=vol.sectors;int kind=vol.kind;
  int r=kind==FS_EXFAT?exfat_mount_at(base,n):fat32_mount_at(base,n);
@@ -94,7 +118,10 @@ int multi_fatfs_put(const char*path,const u8*data,u32 n,int mode,const char*sour
  if(exists!=0&&exists!=NOTFOUND)return finish(exists);
  if((mode==0||mode==4)&&exists==0)return finish(EXISTS);
  FIL dst,src;int opened=0;FRESULT r;
- if(mode==4){e=writable_file(source,&info,0);if(e<0)return finish(e);
+ if(mode==4){/* Source is read-only: RDO/SYSTEM protect mutations, not copying.
+  * Its DATA was resolved through the guarded VFS view above. */
+  r=f_stat(source,&info);e=error(r);if(e<0)return finish(e);
+  if(info.fattrib&AM_DIR)return finish(ISDIR);
   r=f_open(&src,source,FA_READ);if(r!=FR_OK)return finish(error(r));opened=1;}
  BYTE flags=FA_WRITE|((mode==0||mode==4)?FA_CREATE_NEW:mode==1?FA_CREATE_ALWAYS:FA_OPEN_ALWAYS);
  r=f_open(&dst,path,flags);if(r!=FR_OK){e=error(r);if(opened)f_close(&src);return finish(e);}
@@ -166,6 +193,7 @@ static int begin_read(void){
  f_mount(0,"",0);mzero(&ffvol,sizeof ffvol);io_error=0;
  int r=error(f_mount(&ffvol,"",1));
  if(!r&&((vol.kind==FS_FAT32&&ffvol.fs_type!=MPFF_FAT32)||(vol.kind==FS_EXFAT&&ffvol.fs_type!=MPFF_EXFAT)))r=BAD;
+ if(!r)r=select_fat();
  return r;
 }
 int multi_fatfs_next(Stream d,u32*c,Entry*e){

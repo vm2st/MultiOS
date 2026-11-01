@@ -14,21 +14,26 @@ static int translated(MultiHid *h,u8 k,u8 mod){
  case 79:return MULTI_KEY_RIGHT;case 80:return MULTI_KEY_LEFT;case 81:return MULTI_KEY_DOWN;case 82:return MULTI_KEY_UP;
  case 84:return '/';case 85:return '*';case 86:return '-';case 87:return '+';case 100:return shift?'|':'\\';
  }
- if(k>=89&&k<=99){if(h->num)return "1234567890."[k-89];switch(k){case 90:return MULTI_KEY_DOWN;case 92:return MULTI_KEY_LEFT;case 94:return MULTI_KEY_RIGHT;case 96:return MULTI_KEY_UP;}}
+ if(k>=89&&k<=99){if(h->num)return "1234567890."[k-89];switch(k){case 89:return MULTI_KEY_END;case 95:return MULTI_KEY_HOME;case 99:return MULTI_KEY_DELETE;case 90:return MULTI_KEY_DOWN;case 92:return MULTI_KEY_LEFT;case 94:return MULTI_KEY_RIGHT;case 96:return MULTI_KEY_UP;}}
  return 0;
 }
 int multi_hid_report(MultiHid *h,const u8 *r,u32 length){
  if(!h||!r||length!=8)return INVALID;
  for(int i=2;i<8;i++)if(r[i]>=1&&r[i]<=3){h->rollovers++;return UNSUP;}
+ int lost=0;
  for(int i=2;i<8;i++){
   u8 k=r[i];if(!k)continue;int seen=0;
   for(int j=2;j<i;j++)if(r[j]==k)seen=1;
   for(int j=2;j<8;j++)if(h->previous[j]==k)seen=1;
   if(seen)continue;
   if(k==57){h->caps^=1;continue;}if(k==83){h->num^=1;continue;}
-  int event=translated(h,k,r[0]);if(!event)continue;
+  int event=translated(h,k,r[0]);if(!event||lost)continue;
   u8 next=(h->head+1)%MULTI_HID_QUEUE;
-  if(next==h->tail){h->overflows++;continue;}
+  if(next==h->tail){
+   /* Discard the entire pending batch, including Enter. Never silently execute
+    * a command with missing characters. Preserve report state to avoid replay. */
+   h->overflows++;h->tail=0;h->head=1;h->queue[0]=MULTI_KEY_INPUT_LOST;lost=1;continue;
+  }
   h->queue[h->head]=event;h->head=next;
  }
  mcopy(h->previous,r,8);return 0;

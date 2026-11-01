@@ -43,6 +43,9 @@ static void bind_device(void){ncache=0;step=cut=hit=0;as_error=0;mzero(&vol,size
  CK(!multi_hal_bind(&h));}
 static void reset_image(void){for(u32 i=0;i<ntracked;i++){u32 l=tracked[i];memcpy(stable+(size_t)l*512,base+(size_t)l*512,512);changed[l]=0;}ntracked=0;ro=0;extra=0;bind_device();}
 static void mount_rw(void){CK(!fs_mount());CK(!fs_unlock()&&vol.writable);step=0;}
+#ifdef MULTIOS_TX_ACTION_HEADER
+#include MULTIOS_TX_ACTION_HEADER
+#else
 static int action(u32 which){static u8 large[(MULTIOS_UNDO_MAX_RECORDS+1)*512];
  switch(which){case 0:return fs_put("/Созданный файл.txt",(const u8*)"new data",8,0,0);
  case 1:return fs_put("/old.txt",(const u8*)"replacement",11,1,0);
@@ -54,6 +57,7 @@ static int action(u32 which){static u8 large[(MULTIOS_UNDO_MAX_RECORDS+1)*512];
  case 7:return fs_remove("/empty",1);
  default:return fs_put("/too-large.bin",large,(budget+1)*512,0,0);}
 }
+#endif
 static int try_action(u32 which){if(setjmp(off))return IO;return action(which);}
 static int try_mount(void){if(setjmp(off))return IO;return fs_mount();}
 static int isjournal(u32 l){return l>=jstart&&l<jstart+2+2*budget;}

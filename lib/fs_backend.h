@@ -44,6 +44,9 @@ DECL_FS(exfat);
 DECL_FS(fat32);
 DECL_FS(ntfs);
 int fat32_read64(const MultiFile64 *,uint64_t,u8 *,u32);
+/* Partition-relative selected FAT and number of copies to update.
+ * Geometry is validated by fat32_mount_at; no on-disk changes here. */
+int fat32_fat_layout(u32 *start,u32 *length,u32 *copies);
 int exfat_read64(const MultiFile64 *,uint64_t,u8 *,u32);
 int ntfs_read64(const MultiFile64 *,uint64_t,u8 *,u32);
 #endif

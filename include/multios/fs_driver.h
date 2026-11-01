@@ -9,6 +9,8 @@
 #define MULTIOS_FS_RANDOM_IO 8u
 #define MULTIOS_FS_NAMED_STREAMS 16u
 #define MULTIOS_FS_HARDLINKS 32u
+/* Exact spelling wins; a folded fallback must be unique. Backend agrees. */
+#define MULTIOS_FS_EXACT_NAMES 64u
 typedef struct MultiFsDriver {
     u32 abi, size;
     int kind;

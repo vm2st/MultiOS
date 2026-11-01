@@ -78,7 +78,8 @@ static ntfs_volume*open_volume(int ro){
  struct ntfs_device*d=ntfs_device_alloc("MultiPulti-HAL",0,&operations,0);if(!d)return 0;
  ntfs_volume*v=ntfs_device_mount(d,ro?NTFS_MNT_RDONLY:NTFS_MNT_NONE);
  if(!v){int saved=errno;ntfs_device_free(d);errno=saved;}
- else if(ntfs_set_ignore_case(v)){int saved=errno;ntfs_umount(v,0);v=0;errno=saved;}return v;
+ else if(ntfs_set_ignore_case(v)){int saved=errno;ntfs_umount(v,0);v=0;errno=saved;}
+ if(v){NVolSetCaseSensitive(v);NVolSetShowHidFiles(v);NVolSetShowSysFiles(v);}return v;
 }
 int multi_ntfs3g_mount(u32 base,u32 limit){return multi_ntfs3g_mount_full(base,limit);}
 int multi_ntfs3g_unlock(void){
@@ -109,27 +110,80 @@ static int safe_inode(ntfs_inode*i,int directory){
  int isdir=(i->mrec->flags&MFT_RECORD_IS_DIRECTORY)!=0;
  return directory?(isdir?0:NOTDIR):(isdir?ISDIR:0);
 }
+/* A copy source is never modified. Do not require mutation permission just
+ * to read ordinary DATA, but retain metadata/reparse/encryption exclusions. */
+static int safe_copy_source(ntfs_inode*i){
+ if(i->mft_no<FILE_first_user)return READONLY;
+ if(i->mrec->flags&MFT_RECORD_IS_DIRECTORY)return ISDIR;
+ if(i->flags&(FILE_ATTR_REPARSE_POINT|FILE_ATTR_ENCRYPTED))return UNSUP;
+ return 0;
+}
+/* Do not use upstream ignore-case pathname lookup: its collation may select
+ * a folded sibling before the exact POSIX name. Enumerate using stored names.
+ * This stays inside one live volume scope, never calls the resetting VFS. */
+struct NameChoice {ntfs_volume*v;const ntfschar*want;u32 units,exact,fold,steps;u64 er,fr;ntfschar en[255],fn[255];u32 el,fl;int error;};
+static int choose_name(void*opaque,const ntfschar*name,const int units,const int type,const s64 pos,const MFT_REF ref,const unsigned dt){
+ (void)pos;(void)dt;struct NameChoice*c=opaque;
+ if(++c->steps>1048576){c->error=EOPNOTSUPP;return 1;}
+ if(type==FILE_NAME_DOS)return 0;
+ if(units<1||units>255){c->error=EINVAL;return 1;}
+ if(ntfs_names_are_equal(c->want,c->units,name,units,IGNORE_CASE,c->v->upcase,c->v->upcase_len)){
+  if(c->fold<2)c->fold++;c->fr=ref;c->fl=units;mcopy(c->fn,name,units*2);
+  if(ntfs_names_are_equal(c->want,c->units,name,units,CASE_SENSITIVE,c->v->upcase,c->v->upcase_len)){
+   if(c->exact<2)c->exact++;c->er=ref;c->el=units;mcopy(c->en,name,units*2);
+  }
+ }
+ return 0;
+}
+static int select_name(ntfs_inode*parent,const ntfschar*want,u32 units,u64*ref,ntfschar*stored,u8*length){
+ struct NameChoice c={.v=parent->vol,.want=want,.units=units};s64 pos=0;
+ if(ntfs_readdir(parent,&pos,&c,choose_name)||c.error){if(c.error)errno=c.error;return -1;}
+ if(c.exact>1){errno=EIO;return -1;}
+ if(!c.exact&&c.fold>1){errno=EOPNOTSUPP;return -1;}
+ if(!c.exact&&!c.fold){errno=ENOENT;return -1;}
+ *ref=c.exact?c.er:c.fr;u32 n=c.exact?c.el:c.fl;
+ if(stored)mcopy(stored,c.exact?c.en:c.fn,n*2);if(length)*length=(u8)n;return 0;
+}
+static ntfs_inode*path_inode(ntfs_volume*v,const char*path){
+ if(!path||path[0]!='/'||slen(path)>=PATHMAX){errno=EINVAL;return 0;}
+ ntfs_inode*ni=ntfs_inode_open(v,FILE_root);if(!ni)return 0;
+ const char*p=path+1;
+ while(*p){
+  char part[PATHMAX];u32 n=0,units;ntfschar name[255];u64 ref;
+  while(*p&&*p!='/')part[n++]=*p++;part[n]=0;
+  if(!n||multi_utf8_to16(part,(u16*)name,255,&units)<0){errno=EINVAL;goto fail;}
+  if(!(ni->mrec->flags&MFT_RECORD_IS_DIRECTORY)){errno=ENOTDIR;goto fail;}
+  if(select_name(ni,name,units,&ref,0,0))goto fail;
+  if(ntfs_inode_close(ni))return 0;ni=ntfs_inode_open(v,ref);if(!ni)return 0;
+  if(*p){p++;if(!*p){errno=EINVAL;goto fail;}}
+ }
+ return ni;
+ fail:{int saved=errno;ntfs_inode_close(ni);errno=saved;return 0;}
+}
 static int parent_name(ntfs_volume*v,const char*path,ntfs_inode**parent,ntfschar*name,u8*units){
  u32 len=slen(path),slash=0,n;char dir[PATHMAX];if(len>=PATHMAX||!len)return INVALID;
  for(u32 i=0;i<len;i++)if(path[i]=='/')slash=i+1;
  if(!slash||!path[slash]||multi_name_valid(path+slash)<0)return INVALID;
  int r=multi_utf8_to16(path+slash,(u16*)name,255,&n);if(r<0)return r;if(!n||n>255)return TOOLONG;
  *units=(u8)n;if(slash==1){dir[0]='/';dir[1]=0;}else{mcopy(dir,path,slash-1);dir[slash-1]=0;}
- *parent=ntfs_pathname_to_inode(v,0,dir);if(!*parent)return maperr();
+ *parent=path_inode(v,dir);if(!*parent)return maperr();
  if(!((*parent)->mrec->flags&MFT_RECORD_IS_DIRECTORY)){ntfs_inode_close(*parent);*parent=0;return NOTDIR;}
  if((*parent)->mft_no!=FILE_root&&((*parent)->mft_no<FILE_first_user||((*parent)->flags&FILE_ATTR_SYSTEM))){ntfs_inode_close(*parent);*parent=0;return READONLY;}
  if((*parent)->flags&(FILE_ATTR_REPARSE_POINT|FILE_ATTR_ENCRYPTED)){ntfs_inode_close(*parent);*parent=0;return UNSUP;}
+ u64 ref;ntfschar stored[255];u8 length;
+ if(!select_name(*parent,name,*units,&ref,stored,&length)){mcopy(name,stored,length*2);*units=length;}
+ else if(errno!=ENOENT)return maperr();
  return 0;
 }
 int multi_ntfs3g_put(const char*path,const u8*b,u32 n,int mode,const char*source){
  ntfs_volume*v=open_volume(0);if(!v){int r=maperr();mpntfs_reset();return r;}
  int r=0;ntfs_inode*parent=0,*ni=0,*src=0;ntfs_attr*na=0,*sa=0;ntfschar name[256];u8 units;
  r=parent_name(v,path,&parent,name,&units);if(r<0)goto end;
- ni=ntfs_pathname_to_inode(v,0,path);
+ ni=path_inode(v,path);
  if(ni&&(mode==0||mode==3||mode==4)){r=EXISTS;goto end;}
  if(!ni&&errno!=ENOENT){r=maperr();goto end;}
- if(mode==4){src=ntfs_pathname_to_inode(v,0,source);if(!src){r=maperr();goto end;}
-  r=safe_inode(src,0);if(r<0)goto end;sa=ntfs_attr_open(src,AT_DATA,AT_UNNAMED,0);if(!sa){r=maperr();goto end;}}
+ if(mode==4){src=path_inode(v,source);if(!src){r=maperr();goto end;}
+  r=safe_copy_source(src);if(r<0)goto end;sa=ntfs_attr_open(src,AT_DATA,AT_UNNAMED,0);if(!sa){r=maperr();goto end;}}
  if(!ni){ni=ntfs_create(parent,0,name,units,mode==3?S_IFDIR:S_IFREG);if(!ni){r=maperr();goto end;}}
  else {r=safe_inode(ni,0);if(r<0)goto end;}
  if(mode==3)goto end;
@@ -166,7 +220,7 @@ static int resize_attribute(ntfs_attr *na,uint64_t size){
 static int random_mutation(const char*path,uint64_t off,const u8*data,u32 n,int resize){
  if(off>INT64_MAX||(uint64_t)n>INT64_MAX-off)return INVALID;
  ntfs_volume*v=open_volume(0);if(!v){int r=maperr();mpntfs_reset();return r;}
- ntfs_inode*ni=ntfs_pathname_to_inode(v,0,path);if(!ni)return finish(v,maperr());
+ ntfs_inode*ni=path_inode(v,path);if(!ni)return finish(v,maperr());
  int r=safe_inode(ni,0);if(r<0)return finish(v,r);
  ntfs_attr*na=ntfs_attr_open(ni,AT_DATA,AT_UNNAMED,0);if(!na)return finish(v,maperr());
  if(na->data_size<0)return finish(v,BAD);
@@ -185,7 +239,7 @@ int multi_ntfs3g_resize(const char*p,uint64_t size){return random_mutation(p,siz
 int multi_ntfs3g_remove(const char*path,int dir){
  ntfs_volume*v=open_volume(0);if(!v){int r=maperr();mpntfs_reset();return r;}
  ntfs_inode*parent=0,*ni=0;ntfschar name[256];u8 units;int r=parent_name(v,path,&parent,name,&units);
- if(r>=0){ni=ntfs_pathname_to_inode(v,0,path);r=ni?safe_inode(ni,dir):maperr();}
+ if(r>=0){ni=path_inode(v,path);r=ni?safe_inode(ni,dir):maperr();}
  if(r>=0&&dir&&ntfs_check_empty_dir(ni))r=maperr();
  if(r>=0){r=ntfs_delete(v,0,ni,parent,name,units)?maperr():0;ni=parent=0;}
  if(r<0||io_error<0)return finish(v,r);
@@ -197,7 +251,7 @@ int multi_ntfs3g_rename(const char*path,const char*leaf){
  ntfs_inode*parent=0,*ni=0;ntfschar old[256],name[256];u8 oldn;u32 n;
  int r=multi_utf8_to16(leaf,(u16*)name,255,&n);if(r<0||!n||n>255){r=INVALID;goto end;}
  r=parent_name(v,path,&parent,old,&oldn);if(r<0)goto end;
- ni=ntfs_pathname_to_inode(v,0,path);if(!ni){r=maperr();goto end;}
+ ni=path_inode(v,path);if(!ni){r=maperr();goto end;}
  r=safe_inode(ni,(ni->mrec->flags&MFT_RECORD_IS_DIRECTORY)!=0);if(r<0)goto end;
  if(ntfs_link(ni,parent,name,(u8)n)){r=maperr();goto end;}
  r=ntfs_delete(v,0,ni,parent,old,oldn)?maperr():0;ni=parent=0;
@@ -274,6 +328,10 @@ int multi_ntfs3g_next(Stream d,u32*cursor,Entry*e){
  if(!cursor||!e)return INVALID;if(*cursor==UINT32_MAX)return 0;
  ntfs_volume*v=open_volume(1);if(!v)return read_finish(maperr());
  ntfs_inode*ni=ntfs_inode_open(v,d.first);if(!ni)return read_finish(maperr());
+ /* Ignore-case lookup is not ignore-case DISPLAY: ntfs_readdir otherwise
+  * lowercases names. Preserve on-disk spelling for VFS directory entries.
+  * This disposable read-only volume uses inode IDs, not pathname lookup. */
+ NVolSetCaseSensitive(v);
  struct ReadEntry c={.entry=e,.volume=v};s64 pos=*cursor;int r=ntfs_readdir(ni,&pos,&c,read_entry);
  if(c.error)return read_finish(c.error);
  if(c.found){*cursor=(u32)c.next;return read_finish(1);}
@@ -297,20 +355,33 @@ static int stream_inode_allowed(ntfs_inode *ni,int write){
  if(ni->flags&(FILE_ATTR_REPARSE_POINT|FILE_ATTR_ENCRYPTED))return UNSUP;
  return write?safe_inode(ni,0):0;
 }
-/* Upstream ntfs_attr_open always uses CASE_SENSITIVE; resolve the stored
- * spelling using this volume's $UpCase first, then open that exact attribute. */
+/* Exact spelling first. A case-insensitive fallback must be unique. */
 static ntfs_attr *open_named_data(ntfs_inode *ni,const ntfschar *requested,u32 units){
+ ntfs_attr *na=ntfs_attr_open(ni,AT_DATA,(ntfschar*)requested,units);if(na||errno!=ENOENT)return na;
  ntfs_attr_search_ctx*ctx=ntfs_attr_get_search_ctx(ni,0);if(!ctx)return 0;
- if(ntfs_attr_lookup(AT_DATA,requested,units,IGNORE_CASE,0,0,0,ctx)){int saved=errno;ntfs_attr_put_search_ctx(ctx);errno=saved;return 0;}
- ATTR_RECORD*a=ctx->attr;u32 length=le32_to_cpu(a->length),offset=le16_to_cpu(a->name_offset),count=a->name_length;
- if(!count||count>255||offset>length||count*2>length-offset){ntfs_attr_put_search_ctx(ctx);errno=EINVAL;return 0;}
- ntfschar stored[255];mcopy(stored,(u8*)a+offset,count*2);ntfs_attr_put_search_ctx(ctx);
- return ntfs_attr_open(ni,AT_DATA,stored,count);
+ ntfschar stored[255];u32 count=0,matches=0,steps=0;int saved=ENOENT;
+ while(!ntfs_attrs_walk(ctx)){
+  if(++steps>16384){saved=EOPNOTSUPP;goto done;}
+  ATTR_RECORD*a=ctx->attr;
+  if(a->type!=AT_DATA||!a->name_length||(a->non_resident&&sle64_to_cpu(a->lowest_vcn)))continue;
+  u32 len=le32_to_cpu(a->length),off=le16_to_cpu(a->name_offset),n=a->name_length;
+  if(off>len||n*2>len-off){saved=EINVAL;goto done;}
+  ntfschar name[255];mcopy(name,(u8*)a+off,n*2);
+  if(ntfs_names_are_equal(requested,units,name,n,IGNORE_CASE,ni->vol->upcase,ni->vol->upcase_len)){
+   if(++matches>1){saved=EOPNOTSUPP;goto done;}
+   count=n;mcopy(stored,name,n*2);
+  }
+ }
+ if(errno!=ENOENT){saved=errno;goto done;}
+ ntfs_attr_put_search_ctx(ctx);
+ if(matches)return ntfs_attr_open(ni,AT_DATA,stored,count);
+ errno=ENOENT;return 0;
+ done:ntfs_attr_put_search_ctx(ctx);errno=saved;return 0;
 }
 int multi_ntfs3g_stream_next(const char *path,u32 *cursor,MultiNamedStream *info){
  if(*cursor==UINT32_MAX)return 0;if(*cursor>=4096)return UNSUP;
  ntfs_volume*v=open_volume(1);if(!v)return read_finish(maperr());
- ntfs_inode*ni=ntfs_pathname_to_inode(v,0,path);if(!ni)return read_finish(maperr());
+ ntfs_inode*ni=path_inode(v,path);if(!ni)return read_finish(maperr());
  int r=stream_inode_allowed(ni,0);if(r<0)return read_finish(r);
  ntfs_attr_search_ctx*ctx=ntfs_attr_get_search_ctx(ni,0);if(!ctx)return read_finish(maperr());
  u32 index=0,steps=0;
@@ -336,7 +407,7 @@ int multi_ntfs3g_stream_next(const char *path,u32 *cursor,MultiNamedStream *info
 int multi_ntfs3g_stream_read(const char *path,const char *stream,uint64_t off,u8*b,u32 n){
  ntfschar name[255];u32 units;TRY(stream_name16(stream,name,&units));
  ntfs_volume*v=open_volume(1);if(!v)return read_finish(maperr());
- ntfs_inode*ni=ntfs_pathname_to_inode(v,0,path);if(!ni)return read_finish(maperr());
+ ntfs_inode*ni=path_inode(v,path);if(!ni)return read_finish(maperr());
  int r=stream_inode_allowed(ni,0);if(r<0)return read_finish(r);
  ntfs_attr*na=open_named_data(ni,name,units);if(!na)return read_finish(maperr());
  if(na->data_size<0||na->initialized_size<0||na->initialized_size>na->data_size)return read_finish(BAD);
@@ -347,7 +418,7 @@ int multi_ntfs3g_stream_read(const char *path,const char *stream,uint64_t off,u8
 int multi_ntfs3g_stream_change(const char *path,const char *stream,int op,uint64_t off,const u8*b,u32 n){
  ntfschar name[255];u32 units;TRY(stream_name16(stream,name,&units));
  ntfs_volume*v=open_volume(0);if(!v){int r=maperr();mpntfs_reset();return r;}
- ntfs_inode*ni=ntfs_pathname_to_inode(v,0,path);if(!ni)return finish(v,maperr());
+ ntfs_inode*ni=path_inode(v,path);if(!ni)return finish(v,maperr());
  int r=stream_inode_allowed(ni,1);if(r<0)return finish(v,r);
  ntfs_attr*na=open_named_data(ni,name,units);
  if(op==MULTIOS_STREAM_CREATE){
@@ -378,11 +449,11 @@ int multi_ntfs3g_stream_change(const char *path,const char *stream,int op,uint64
 }
 int multi_ntfs3g_link(const char *source,const char *destination){
  ntfs_volume*v=open_volume(0);if(!v){int r=maperr();mpntfs_reset();return r;}
- ntfs_inode*ni=ntfs_pathname_to_inode(v,0,source);if(!ni)return finish(v,maperr());
+ ntfs_inode*ni=path_inode(v,source);if(!ni)return finish(v,maperr());
  int r=safe_inode(ni,0);if(r<0)return finish(v,r);
  ntfs_inode*parent=0;ntfschar name[256];u8 units;
  r=parent_name(v,destination,&parent,name,&units);if(r<0)return finish(v,r);
- ntfs_inode*exists=ntfs_pathname_to_inode(v,0,destination);
+ ntfs_inode*exists=path_inode(v,destination);
  if(exists)return finish(v,EXISTS);if(errno!=ENOENT)return finish(v,maperr());
  if(ntfs_link(ni,parent,name,units))return finish(v,maperr());
  ntfs_inode_update_times(ni,NTFS_UPDATE_CTIME);

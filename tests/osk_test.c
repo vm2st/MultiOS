@@ -47,6 +47,7 @@ int main(void) {
                   .console = {.putc = emit, .getc = key, .osk = panel}};
     assert(multi_hal_bind(&h) == 0);
     assert(!multi_osk_enabled());
+    int before=paints;assert(multi_osk_enable(0)==0&&paints==before);
     assert(multi_osk_process('a') == 'a');
     assert(multi_osk_process(MULTI_KEY_UP) == -2);
     assert(multi_osk_enable(1) == 0);
