@@ -1,38 +1,33 @@
-> **Текущая 0.28-dev-usb-hardening:** [USB_STORAGE_0_28_RU.md](USB_STORAGE_0_28_RU.md), [TEST_USB_0_28_RU.md](TEST_USB_0_28_RU.md). UHCI/OHCI/EHCI, BOT STALL/short packet hardening, ограниченный RO-кеш NTFS, защита от потери отложенной ошибки. Неопубликованная разработка, не стабильный Release 1.0. Ниже — история.
+<table align="center" style="border: none; border-collapse: collapse; background: transparent;">
+  <tr style="border: none; background: transparent;">
+    <td style="border: none; padding: 0; background: transparent;">
+      <img src="https://github.com/user-attachments/assets/7add4713-dd28-4fa4-9459-302ca1a13b7d" width="64" height="64" alt="MultiOSLogo" />
+    </td>
+    <td style="border: none; padding-left: 12px; background: transparent;">
+      <h1>MultiOS</h1>
+    </td>
+  </tr>
+</table>
 
-> **Актуальная 0.27-dev-usb-bot:** [USB_STORAGE_0_27_RU.md](USB_STORAGE_0_27_RU.md), [TEST_USB_0_27_RU.md](TEST_USB_0_27_RU.md). Нативные USB BOT диски в BIOS, FAT32/exFAT/NTFS experimental RW, реальная BIOS USB-загрузка. Не полная USB-совместимость и не стабильный Release 1.0. Все следующие version notes исторические.
+## What is MultiOS?
+MultiOS is an operating system aimed at simple porting to any platforms. To achieve this, compatibility layers, programs of simple and complex levels, and other ideas are being created that should help achieve this goal (in progress).
 
-> **USB 0.26-dev-usb12:** актуальная поддержка UHCI/OHCI/EHCI, границы и сборка описаны в [USB_0_26_RU.md](USB_0_26_RU.md). Ниже сохранены исторические инструкции. Не Release 1.0.
+## What will it include?
+MultiOS will include
+* Interpreter for the EMC (EasyMultiConsole) bytecode we created, which provides an environment for running simple console applications on any platform.
+* A powerful recompiler for each platform that will translate the code of complex applications not related to EMC on the fly.
+* Support for various peripherals for different devices.
+* And maybe more in future...
 
-> **Актуальная 0.25-dev-easymod:** начните с EASY_START_RU.md и MODULARITY_0_25_RU.md. Ниже исторические инструкции. UNPUBLISHED, НЕ Release1.0.
+## What does it already include?
+* Support for USB: UHCI, OHCI and EHCI.
+* Cool bootloader.
+* Support for FAT32, exFAT and NTFS filesystems.
+* And maybe more in future...
 
-> **Current / текущая сборка: 0.21-dev-ntfsstreams.** ADS, hardlinks, проверяемый COPYADS, ABI ФС 5. См. FILESYSTEMS_0_21_RU.md. Не Release 1.0; старые разделы ниже — история.
+## What are we currently focused on?
+At the moment, we are focused on the x86 architecture (PCs, laptops, and other similar devices).
+Our next target will be ARM.
 
-> **Current build 0.20-dev-fileio:** random write/resize, filesystem ABI 4, exFAT ValidDataLength safety fix and large-file host/UEFI audit. See FILESYSTEMS_0_20_RU.md. Older sections below are historical; NOT Release 1.0.
-
-> **0.19 UEFI baseline fix:** firmware and NTFS library explicitly target base x86-64, not distribution defaults such as x86-64-v2. GNU-EFI is built from the included source archive by default; see FILESYSTEMS_0_19_RU.md. The development build remains unpublished and is not Release 1.0.
-
-# MultiOS 0.19-dev-stagedfs / MultiPulti
-
-vm2 studios | t.me/v2vproj — UNPUBLISHED DEVELOPMENT, NOT Release 1.0.
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
-ОБЩАЯ ИНФОРМАЦИЯ
-
-МультиОС является легковесной ОС, которая преследует цель стать самой портируемой ОС. МультиОС имеет консольный вид и несколько функций(на данный момент). 
------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-ВЕРСИИ И РЕЛИЗЫ
-
-Нынешняя версия: 0.33, пререлиз.
-Релиз: 5.11.2026
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-ЯДРО И ЛИЦЕНЗИЯ
-
-Ядро ОС: MultiPulti(над названием не старались).
-Лицензия: MIT License.
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-!ВАЖНОЕ ПРИМЕЧАНИЕ!
-ОС не сделана человеком. Если разработка будет продолжатся человеком, а не ИИ, то текст тут изменится.
-
-Все остальные аспекты нахходятся в .md файлах корневой папки. Прочтите их!
+## Do we use AI?
+Of course, we use AI. This enables this OS to exist in the first place. It’s worth noting that many things, such as the EMC bytecode, are developed by us without using AI, just like the interpreter.
