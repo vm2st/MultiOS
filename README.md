@@ -23,17 +23,11 @@ MultiOS will include
 * Support for USB: UHCI, OHCI, ECHI and xHCI.
 * Cool bootloader.
 * Support for FAT32, exFAT and NTFS filesystems.
-* It's own core, which includes HAL, OSK and commands.
 * And maybe more in future...
 
 ## What are we currently focused on?
-At the moment, we are focused on the x86 and x64 architecture (PCs, laptops, and other similar devices) and the file system which is very buggy.
+At the moment, we are focused on the x86 and x64 architecture (PCs, laptops, and other similar devices).
 Our next target will be ARM.
 
 ## Do we use AI?
 Of course, we use AI. This enables this OS to exist in the first place. It’s worth noting that many things, such as the EMC bytecode, are developed by us without using AI, just like the interpreter.
-
-
-## Current version
-0.37 PRE-BETA | 
-0.4 version of README
