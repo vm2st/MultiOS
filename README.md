@@ -32,6 +32,5 @@ Our next target will be ARM.
 ## Do we use AI?
 Of course, we use AI. This enables this OS to exist in the first place. It’s worth noting that many things, such as the EMC bytecode, are developed by us without using AI, just like the interpreter.
 
-
-
-Current version: 0.37 PRE-BETA
+## Current version
+0.37 PRE-BETA
