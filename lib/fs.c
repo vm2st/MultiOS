@@ -57,6 +57,11 @@ int multi_fs_validate(const MultiFsDriver *const *r, u32 n) {
     }
     return 0;
 }
+/* Status callbacks are NOT byte-count or iterator callbacks. */
+static int driver_status(int r){
+ if(r<=0)return r;
+ vol.mounted=0;vol.writable=0;vol.poisoned=1;return IO;
+}
 static const MultiFsDriver *current(void) {
     for (u32 i = 0; i < DRIVER_COUNT; i++)
         if (drivers[i]->kind == vol.kind)
@@ -164,11 +169,9 @@ int fs_mount_select(int selection) {
     vol.base = base;
     vol.sectors = limit;
     int r = driver->mount(base, limit);
-    if (r < 0) {
-        vol.mounted = 0;
-        vol.writable = 0;
-        return r;
-    }
+    if(r>0)r=IO;
+    if(!r&&(vol.kind!=driver->kind||vol.base!=base||vol.sectors!=limit||vol.poisoned))r=BAD;
+    if(r<0){vol.mounted=0;vol.writable=0;vol.kind=-1;return r;}
     vol.mounted = 1;
     vol.writable = 0;
     return 0;
@@ -179,29 +182,33 @@ int fs_mount(void) {
 Stream fs_root(void) {
     const MultiFsDriver *d = current();
     Stream zero = {0};
-    return d ? d->root() : zero;
+    return vol.mounted && d ? d->root() : zero;
 }
 int fs_next(Stream s, u32 *c, Entry *e) {
     if (!c || !e)
         return INVALID;
+    if(!vol.mounted)return BAD;
     const MultiFsDriver *d = current();
     if(!d)return UNSUP;
-    int r=d->next(s,c,e);
+    u32 previous=*c;int r=d->next(s,c,e);
+    if(r>1||(r==1&&*c<=previous))return driver_status(1);
     if(r>0&&!e->wide){e->size64=e->data.size;e->valid64=e->data.valid;e->wide=1;}
     return r;
 }
 int fs_read(Stream s, u32 o, u8 *b, u32 n) {
+    if(!vol.mounted)return BAD;
     if(s.flags&MULTI_STREAM_WIDE)return UNSUP;
     if (n && !b)
         return INVALID;
     const MultiFsDriver *d = current();
-    return d ? d->read(s, o, b, n) : UNSUP;
+    return d ? driver_status(d->read(s, o, b, n)) : UNSUP;
 }
 int fs_free(u32 *n) {
     if (!n)
         return INVALID;
+    if(!vol.mounted)return BAD;
     const MultiFsDriver *d = current();
-    return d ? d->free(n) : UNSUP;
+    return d ? driver_status(d->free(n)) : UNSUP;
 }
 int fs_names_equal(const char *a, const char *b) {
     if (!a || !b) return INVALID;
@@ -239,6 +246,24 @@ int fs_unlock(void) {
 #endif
     return 0;
 }
+/* A backend must never reinterpret a mutation path (FatFs trims trailing
+ * spaces/dots and accepts relative/dot components). Validate BEFORE undo begin,
+ * so an invalid request neither touches disk nor poisons a healthy mount.
+ * Keep this contract common to every modular filesystem driver. */
+static int mutation_path(const char *path){
+    if(!path||path[0]!='/')return INVALID;
+    u32 len=0;while(len<PATHMAX&&path[len])len++;
+    if(len==PATHMAX)return TOOLONG;
+    if(len<2)return INVALID;
+    char part[PATHMAX];u32 start=1;
+    for(u32 i=1;i<=len;i++){
+        if(i<len&&path[i]!='/')continue;
+        u32 n=i-start;if(!n)return INVALID;
+        mcopy(part,path+start,n);part[n]=0;
+        TRY(multi_name_valid(part));start=i+1;
+    }
+    return 0;
+}
 static int lookup(Stream,const char *,Entry *,int);
 static int resolve(const char *,Stream *,Entry *,int *,int);
 /* Run before opening a backend volume: enumeration may reset its arena. */
@@ -252,6 +277,8 @@ int fs_put(const char *p, const u8 *b, u32 n, int m, const char *s) {
         return INVALID;
     if (!write_allowed())
         return READONLY;
+    TRY(mutation_path(p));
+    if(m==4)TRY(mutation_path(s));
     TRY(check_path(p,1));
     if(m==4){MultiFile64 f;TRY(fs_open64(s,&f));}
     TRY(invalidate_views());
@@ -259,12 +286,13 @@ int fs_put(const char *p, const u8 *b, u32 n, int m, const char *s) {
     TRY(multi_storage_begin());
     return multi_storage_finish(current()->put(p, b, n, m, s));
 #else
-    return current()->put(p, b, n, m, s);
+    return driver_status(current()->put(p, b, n, m, s));
 #endif
 }
 int fs_write64(const char *path, uint64_t off, const u8 *data, u32 n) {
     if (!path || (n && !data)) return INVALID;
     if (!write_allowed()) return READONLY;
+    TRY(mutation_path(path));
     const MultiFsDriver *d=current();
     if (!(d->capabilities & MULTIOS_FS_RANDOM_IO)) return UNSUP;
     MultiFile64 f;TRY(fs_open64(path,&f));
@@ -274,12 +302,13 @@ int fs_write64(const char *path, uint64_t off, const u8 *data, u32 n) {
 #ifdef MULTIOS_STORAGE_TX
     TRY(multi_storage_begin());return multi_storage_finish(d->write_at(path,off,data,n));
 #else
-    return d->write_at(path,off,data,n);
+    return driver_status(d->write_at(path,off,data,n));
 #endif
 }
 int fs_resize64(const char *path, uint64_t size) {
     if (!path) return INVALID;
     if (!write_allowed()) return READONLY;
+    TRY(mutation_path(path));
     const MultiFsDriver *d=current();
     if (!(d->capabilities & MULTIOS_FS_RANDOM_IO)) return UNSUP;
     if (size>INT64_MAX || (vol.kind==FS_FAT32 && size>UINT32_MAX)) return UNSUP;
@@ -288,7 +317,7 @@ int fs_resize64(const char *path, uint64_t size) {
 #ifdef MULTIOS_STORAGE_TX
     TRY(multi_storage_begin());return multi_storage_finish(d->resize(path,size));
 #else
-    return d->resize(path,size);
+    return driver_status(d->resize(path,size));
 #endif
 }
 static int stream_name_valid(const char *name){
@@ -297,29 +326,31 @@ static int stream_name_valid(const char *name){
 int fs_stream_next(const char *path,u32 *cursor,MultiNamedStream *info){
     if(!path||!cursor||!info)return INVALID;if(!vol.mounted)return BAD;
     const MultiFsDriver*d=current();if(!d||!(d->capabilities&MULTIOS_FS_NAMED_STREAMS))return UNSUP;
-    MultiFile64 f;TRY(fs_open64(path,&f));return d->stream_next(path,cursor,info);
+    MultiFile64 f;TRY(fs_open64(path,&f));u32 previous=*cursor;
+    int r=d->stream_next(path,cursor,info);if(r>1||(r==1&&*cursor<=previous))return driver_status(1);return r;
 }
 int fs_stream_read(const char *path,const char *name,uint64_t off,u8 *b,u32 n){
     if(!path||(n&&!b))return INVALID;TRY(stream_name_valid(name));if(!vol.mounted)return BAD;
     const MultiFsDriver*d=current();if(!d||!(d->capabilities&MULTIOS_FS_NAMED_STREAMS))return UNSUP;
-    MultiFile64 f;TRY(fs_open64(path,&f));return d->stream_read(path,name,off,b,n);
+    MultiFile64 f;TRY(fs_open64(path,&f));return driver_status(d->stream_read(path,name,off,b,n));
 }
 int fs_stream_change(const char *path,const char *name,int op,uint64_t off,const u8*b,u32 n){
     if(!path||op<MULTIOS_STREAM_CREATE||op>MULTIOS_STREAM_REMOVE||(n&&!b))return INVALID;
     TRY(stream_name_valid(name));
     if((op!=MULTIOS_STREAM_WRITE&&op!=MULTIOS_STREAM_RESIZE&&off)||
        ((op==MULTIOS_STREAM_RESIZE||op==MULTIOS_STREAM_REMOVE)&&n)||off>INT64_MAX)return INVALID;
-    if(!write_allowed())return READONLY;const MultiFsDriver*d=current();
+    if(!write_allowed())return READONLY;TRY(mutation_path(path));const MultiFsDriver*d=current();
     if(!(d->capabilities&MULTIOS_FS_NAMED_STREAMS))return UNSUP;
     MultiFile64 f;TRY(fs_open64(path,&f));TRY(invalidate_views());
 #ifdef MULTIOS_STORAGE_TX
     TRY(multi_storage_begin());return multi_storage_finish(d->stream_change(path,name,op,off,b,n));
 #else
-    return d->stream_change(path,name,op,off,b,n);
+    return driver_status(d->stream_change(path,name,op,off,b,n));
 #endif
 }
 int fs_link(const char *source,const char *newpath){
     if(!source||!newpath)return INVALID;if(!write_allowed())return READONLY;
+    TRY(mutation_path(source));TRY(mutation_path(newpath));
     const MultiFsDriver*d=current();if(!(d->capabilities&MULTIOS_FS_HARDLINKS))return UNSUP;
     MultiFile64 f;TRY(fs_open64(source,&f));Stream parent;char name[PATHMAX];TRY(fs_parent(newpath,&parent,name));TRY(multi_name_valid(name));
     TRY(check_path(newpath,1));
@@ -327,7 +358,7 @@ int fs_link(const char *source,const char *newpath){
 #ifdef MULTIOS_STORAGE_TX
     TRY(multi_storage_begin());return multi_storage_finish(d->link(source,newpath));
 #else
-    return d->link(source,newpath);
+    return driver_status(d->link(source,newpath));
 #endif
 }
 int fs_remove(const char *p, int d) {
@@ -335,13 +366,14 @@ int fs_remove(const char *p, int d) {
         return INVALID;
     if (!write_allowed())
         return READONLY;
+    TRY(mutation_path(p));
     TRY(check_path(p,0));
     TRY(invalidate_views());
 #ifdef MULTIOS_STORAGE_TX
     TRY(multi_storage_begin());
     return multi_storage_finish(current()->remove(p, d));
 #else
-    return current()->remove(p, d);
+    return driver_status(current()->remove(p, d));
 #endif
 }
 int fs_rename(const char *p, const char *n) {
@@ -349,6 +381,7 @@ int fs_rename(const char *p, const char *n) {
         return INVALID;
     if (!write_allowed())
         return READONLY;
+    TRY(mutation_path(p));TRY(multi_name_valid(n));
     if(fs_capabilities()&MULTIOS_FS_EXACT_NAMES){
         Stream parent;Entry src,dst;int root;
         TRY(resolve(p,&parent,&src,&root,1));TRY(multi_name_valid(n));
@@ -361,7 +394,7 @@ int fs_rename(const char *p, const char *n) {
     TRY(multi_storage_begin());
     return multi_storage_finish(current()->rename(p, n));
 #else
-    return current()->rename(p, n);
+    return driver_status(current()->rename(p, n));
 #endif
 }
 static int lookup(Stream d, const char *n, Entry *e, int wide) {
@@ -443,7 +476,7 @@ int fs_read64(const MultiFile64 *f,uint64_t off,u8 *b,u32 n){
     if(!f||(n&&!b))return INVALID;
     if(!vol.mounted||f->epoch!=mount_epoch||f->kind!=vol.kind)return BAD;
     if(f->valid>f->size||off>f->size||(uint64_t)n>f->size-off)return BAD;
-    const MultiFsDriver *d=current();return d?d->read64(f,off,b,n):UNSUP;
+    const MultiFsDriver *d=current();return d?driver_status(d->read64(f,off,b,n)):UNSUP;
 }
 int fs_parent(const char *path, Stream *parent, char *name) {
     if (!path || !parent || !name)

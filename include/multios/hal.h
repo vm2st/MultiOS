@@ -41,6 +41,12 @@ typedef struct {
 int multi_hal_bind(const MultiHal *hal);
 const MultiHal *multi_hal(void);
 /* Sticky removal/failure notification from the currently bound block context.
- * No journal reset/rebind; writes stay disabled until a fresh boot/bind. */
+ * No journal reset/rebind. ALL block callbacks stay disabled until a fresh
+ * boot/bind, including direct storage/recovery access in transactional builds.
+ * A notification raised inside an I/O callback overrides its zero result.
+ * block_ctx must be the selected provider's non-NULL context, not another disk. */
 int multi_hal_media_failed(void *block_ctx);
+/* Read-only sticky status: true before bind or after selected-media failure.
+ * Resetting storage bookkeeping does not clear this HAL-level latch. */
+int multi_hal_media_unavailable(void);
 #endif

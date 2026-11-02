@@ -23,7 +23,7 @@ typedef struct {
  MultiUndoConfig config;
  uint64_t sequence,transaction,targets[MULTIOS_UNDO_MAX_RECORDS];
  u32 count,capacity,mirror_first,expected_crc[MULTIOS_UNDO_MAX_RECORDS];
- int ready,active,failed,owned,degraded;
+ int ready,active,failed,owned,degraded,abort_error;
 } MultiUndo;
 /* Initialize the complete reserved extent to zero OUTSIDE this API, only on a
  * NEW disposable image. format refuses any nonzero sector and is explicit.
@@ -35,10 +35,16 @@ int multi_undo_format(MultiBlock64 *,const MultiUndoConfig *);
  */
 int multi_undo_open(MultiUndo *,MultiBlock64 *,const MultiUndoConfig *);
 /* begin reserves generation space for a full transaction. NOSPACE on write
- * requires abort/recover, never a successful partial filesystem operation.
+ * marks the live transaction abort-only: subsequent writes/commit return the
+ * first rejection until recover succeeds. This also covers bad target/buffer.
+ * No successful partial filesystem operation is permitted.
  * Only a transaction begun by this live object may be written/committed;
  * reopened ACTIVE transactions must be recovered first. After any commit I/O error the result is UNKNOWN until fresh open/recovery. */
 int multi_undo_begin(MultiUndo *);
+/* Latch a logical request error for an owned ACTIVE transaction, without I/O.
+ * Outside such a transaction returns the normalized error without changing it.
+ * Zero/positive "errors" normalize to INVALID/IO; the first error wins. */
+int multi_undo_abort(MultiUndo *,int error);
 int multi_undo_read(MultiUndo *,uint64_t,u8 *);
 int multi_undo_write(MultiUndo *,uint64_t,const u8 *);
 int multi_undo_commit(MultiUndo *);

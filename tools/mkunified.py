@@ -16,7 +16,7 @@ def sources_zip(dest):
         for p in sorted(ROOT.iterdir()):
             if p.is_file() and (p.suffix in ('.md','.sh','.ps1') or p.name in ('Makefile','LICENSE','THIRD_PARTY_NOTICES.txt','.gitignore')):
                 z.write(p,'MultiOS/'+p.name)
-        for folder in ('core','drivers','include','lib','platform','ports','profiles','tools','tests','third_party','vendor'):
+        for folder in ('.github','core','drivers','include','lib','platform','ports','profiles','tools','tests','third_party','vendor'):
             for p in sorted((ROOT/folder).rglob('*')):
                 if p.is_file() and '__pycache__' not in p.parts and p.suffix!='.pyc':
                     z.write(p,'MultiOS/'+str(p.relative_to(ROOT)))

@@ -17,6 +17,8 @@ typedef struct {
 typedef struct { MultiBlock64Provider provider; int bound, failed; } MultiBlock64;
 /* Initialize the state to zero. No rebinding: create a new state for a new mount.
  * Providers transfer exactly one sector and return 0 or a negative error.
+ * A provider error permanently blocks writes AND flushes in this binding;
+ * diagnostic reads are still allowed. Reopen using a new state for recovery.
  */
 int multi_block64_bind(MultiBlock64 *io,const MultiBlock64Provider *provider);
 int multi_block64_read(MultiBlock64 *io,uint64_t lba,u8 *sector);

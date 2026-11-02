@@ -51,7 +51,11 @@ def install(source,output,bundle=None,efi=None):
      pe=struct.unpack_from('<I',raw,60)[0]
      if raw[pe:pe+4]!=b'PE\0\0' or struct.unpack_from('<H',raw,pe+4)[0]!=0x8664:raise ValueError('Not x64 PE')
      entries.append((ef,'EFI/BOOT/BOOTX64.EFI'))
-    doc=r/'INPUT_0_33_RU.md'
+    doc=r/'FILESYSTEMS_0_37_RU.md'
+    if not doc.exists():doc=r/'FILESYSTEMS_0_36_RU.md'
+    if not doc.exists():doc=r/'FILESYSTEMS_0_35_RU.md'
+    if not doc.exists():doc=r/'FILESYSTEMS_0_34_RU.md'
+    if not doc.exists():doc=r/'INPUT_0_33_RU.md'
     if not doc.exists():doc=r/'FILESYSTEMS_0_32_RU.md'
     if not doc.exists():doc=r/'FILESYSTEMS_0_31_RU.md'
     if not doc.exists():doc=r/'FILESYSTEMS_0_30_RU.md'
@@ -59,7 +63,7 @@ def install(source,output,bundle=None,efi=None):
     if not doc.exists():doc=r/'USB_STORAGE_0_28_RU.md'
     if not doc.exists():doc=r/'USB_STORAGE_0_27_RU.md'
     if not doc.exists():doc=r/'EASY_START_RU.md'
-    if doc.exists():entries.extend([(doc,'DOCS/INPUT33.MD'),(doc,'START.TXT'),(doc,'DRIVERS.TXT'),(doc,'MULTIOS/IMAGE.TXT')])
+    if doc.exists():entries.extend([(doc,'DOCS/FS37.MD'),(doc,'START.TXT'),(doc,'DRIVERS.TXT'),(doc,'MULTIOS/IMAGE.TXT')])
     for path,dest in entries:
      subprocess.run(['mcopy','-o','-i',drive,str(path),'::'+dest],check=True)
    with output.open('rb') as out:os.fsync(out.fileno())

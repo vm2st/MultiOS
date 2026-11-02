@@ -24,6 +24,7 @@ int main(void){
   assert(!multi_block64_read_bytes(&io,UINT64_MAX,0,0,0,0));
   failure=1;assert(multi_block64_read(&io,0,buf)==IO&&io.failed&&!io.provider.writable);failure=0;
   before=writes;assert(multi_block64_write(&io,0,buf)==READONLY&&writes==before);
+  before=flushes;assert(multi_block64_flush(&io)==READONLY&&flushes==before);
   assert(!multi_block64_read(&io,0,buf));
  }
  bytes=512;
@@ -32,6 +33,7 @@ int main(void){
   int r=mode==0?multi_block64_read(&io,0,buf):mode==1?multi_block64_write(&io,0,buf):multi_block64_flush(&io);
   assert(r==IO&&io.failed&&!io.provider.writable);failure=0;
   assert(multi_block64_write(&io,0,buf)==READONLY);
+  u32 before=flushes;assert(multi_block64_flush(&io)==READONLY&&flushes==before);
  }
  MultiBlock64 io={0};MultiBlock64Provider p=provider();p.writable=0;p.write=0;p.flush=0;
  assert(!multi_block64_bind(&io,&p)&&!multi_block64_flush(&io)&&multi_block64_write(&io,0,buf)==READONLY);

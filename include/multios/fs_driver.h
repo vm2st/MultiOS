@@ -11,6 +11,10 @@
 #define MULTIOS_FS_HARDLINKS 32u
 /* Exact spelling wins; a folded fallback must be unique. Backend agrees. */
 #define MULTIOS_FS_EXACT_NAMES 64u
+/* Status callbacks: mount/read/read64/free/unlock and ALL mutations return
+ * exactly 0 or a negative error. next/stream_next return 0/1/negative and
+ * advance the cursor strictly on each yielded entry. Positive byte counts
+ * are NOT valid status results. mount must preserve the supplied geometry. */
 typedef struct MultiFsDriver {
     u32 abi, size;
     int kind;

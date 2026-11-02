@@ -14,11 +14,17 @@ static uint64_t get64(const u8*p){return get32(p)|((uint64_t)get32(p+4)<<32);}
 static int equal(const u8*a,const u8*b,u32 n){while(n--)if(*a++!=*b++)return 0;return 1;}
 static u32 crc(const u8*p,u32 n){u32 c=UINT32_MAX;while(n--){c^=*p++;for(u32 k=0;k<8;k++)c=(c>>1)^(0xedb88320u&(0u-(c&1)));}return ~c;}
 static int zero(const u8*p,u32 n){while(n--)if(*p++)return 0;return 1;}
-static int raw_read(void*ctx,uint64_t lba,u8*b){const MultiHal*h=ctx;if(!h||!b)return INVALID;if(lba>=h->block.sectors)return BAD;return h->block.read(h->block.ctx,(u32)lba,b);}
-static int raw_write(void*ctx,uint64_t lba,const u8*b){const MultiHal*h=ctx;if(!h||!b)return INVALID;if(lba>=h->block.sectors||!h->block.writable||!h->block.write)return READONLY;return h->block.write(h->block.ctx,(u32)lba,b);}
-static int raw_flush(void*ctx){const MultiHal*h=ctx;if(!h)return INVALID;return h->block.flush?h->block.flush(h->block.ctx):(h->block.writable?IO:0);}
+/* The provider can report selected-media loss during a synchronous callback.
+ * Do not let its later zero result erase that sticky notification. */
+static int raw_result(int r){if(r>0)r=IO;return !r&&(multi_hal_media_unavailable()||state<0||device.failed)?READONLY:r;}
+static int raw_read(void*ctx,uint64_t lba,u8*b){const MultiHal*h=ctx;if(!h||!b)return INVALID;if(lba>=h->block.sectors)return BAD;return raw_result(h->block.read(h->block.ctx,(u32)lba,b));}
+static int raw_write(void*ctx,uint64_t lba,const u8*b){const MultiHal*h=ctx;if(!h||!b)return INVALID;if(lba>=h->block.sectors||!h->block.writable||!h->block.write)return READONLY;return raw_result(h->block.write(h->block.ctx,(u32)lba,b));}
+static int raw_flush(void*ctx){const MultiHal*h=ctx;if(!h)return INVALID;return raw_result(h->block.flush?h->block.flush(h->block.ctx):(h->block.writable?IO:0));}
+/* Keep the journal and ACTIVE record intact; only an explicit fresh binding may
+ * reopen/recover it. In particular do not attempt rollback on a removed disk. */
+void multi_storage_media_failed(void){state=-1;device.failed=1;device.provider.writable=0;}
 void multi_storage_reset(void){mzero(&device,sizeof(device));mzero(&journal,sizeof(journal));state=0;}
-int multi_storage_blocked(void){return state<0||device.failed||journal.failed;}
+int multi_storage_blocked(void){return multi_hal_media_unavailable()||state<0||device.failed||journal.failed;}
 const char *multi_storage_description(void){
  if(multi_storage_blocked())return "Private undo: BLOCKED; reopen device/reboot before recovery";
  if(state==1)return "Private undo: no prepared locator; RW refused";
@@ -59,6 +65,7 @@ static int locator(const u8*a,const u8*b,MultiUndoConfig*c){
  return 0;
 }
 int multi_storage_prepare(void){
+ if(multi_hal_media_unavailable())return fail(READONLY);
  if(state==2)return multi_storage_blocked()?READONLY:0;
  if(state==1)return 0;if(state<0)return READONLY;
  const MultiHal*h=multi_hal();if(!h||h->block.sectors<2)return fail(INVALID);
@@ -91,9 +98,14 @@ int multi_storage_begin(void){
  if(!multi_storage_matches(vol.base,vol.sectors))return READONLY;
  int r=multi_undo_begin(&journal);if(r<0&&multi_storage_blocked()){state=-1;unmount_failed();}return r;
 }
+int multi_storage_reject(int r){
+ if(r>=0)r=r?IO:INVALID;
+ return state==2?multi_undo_abort(&journal,r):r;
+}
 int multi_storage_read(u32 lba,u8*b){
  if(multi_storage_blocked())return READONLY;
- return device.bound?multi_block64_read(&device,lba,b):raw_read((void*)multi_hal(),lba,b);
+ int r=device.bound?multi_block64_read(&device,lba,b):raw_read((void*)multi_hal(),lba,b);
+ return r?multi_storage_reject(r):0;
 }
 int multi_storage_flush(void){
  if(multi_storage_blocked())return READONLY;
@@ -105,7 +117,9 @@ int multi_storage_write(u32 lba,const u8*b){
 }
 int multi_storage_finish(int r){
  if(state!=2||!journal.active){unmount_failed();return fail(BAD);}
- if(r>=0){r=multi_undo_commit(&journal);if(r>=0)return r;}
+ /* Mutators return exactly zero, never byte counts or positive errors. */
+ if(r>0)r=IO;
+ if(!r){r=multi_undo_commit(&journal);if(!r&&!multi_storage_blocked())return 0;if(!r)r=READONLY;}
  /* Never reuse FS allocation/directory caches after any unsuccessful mutation. */
  int original=r;
  if(!multi_storage_blocked()){

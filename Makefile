@@ -640,3 +640,44 @@ test-input-sanitize: build/hid-sanitize build/editor-sanitize
 	./build/hid-sanitize
 	./build/editor-sanitize
 test: test-input-sanitize
+
+build/fs-path-probe: tests/fs_path_probe.c tests/fs_random_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/fs_path_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/fs-path-probe-sanitize: tests/fs_path_probe.c tests/fs_random_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie tests/fs_path_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+
+build/tx-abort-test: tests/tx_abort_test.c tests/undo_test.c lib/undo.c lib/block64.c include/multios/undo.h | build
+	$(CC) -std=c11 -O2 -Ilib -Iinclude tests/tx_abort_test.c lib/undo.c lib/block64.c -o $@
+build/tx-abort-sanitize: tests/tx_abort_test.c tests/undo_test.c lib/undo.c lib/block64.c include/multios/undo.h | build
+	$(CC) -std=c11 -g -O1 -fsanitize=address,undefined -fno-pie -no-pie -Ilib -Iinclude tests/tx_abort_test.c lib/undo.c lib/block64.c -o $@
+test-tx-abort: build/tx-abort-test build/tx-abort-sanitize
+	./build/tx-abort-test
+	./build/tx-abort-sanitize
+.PHONY: test-tx-abort
+
+build/fs-driver-contract-test: tests/fs_driver_contract_test.c tests/file64_epoch_test.c lib/fs.c lib/util.c | build
+	$(CC) -std=c11 -Wall -O1 -g -Ilib -Iinclude -DMULTIOS_FS_REGISTRY='"../tests/fs64_mock.registry.h"' -fsanitize=address,undefined -fno-pie -no-pie tests/fs_driver_contract_test.c lib/fs.c lib/util.c -o $@
+test-fs-driver-contract: build/fs-driver-contract-test
+	./build/fs-driver-contract-test
+.PHONY: test-fs-driver-contract
+
+build/fs-tx-contract-probe: tests/fs_tx_contract_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/fs_tx_contract_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/fs-tx-contract-probe-sanitize: tests/fs_tx_contract_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-pie -no-pie tests/fs_tx_contract_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+
+build/fs-hal-reject-probe: tests/fs_hal_reject_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/fs_hal_reject_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/fs-hal-reject-probe-sanitize: tests/fs_hal_reject_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-pie -no-pie tests/fs_hal_reject_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+
+build/fs-media-failure-probe: tests/fs_media_failure_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/fs_media_failure_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/fs-media-failure-probe-sanitize: tests/fs_media_failure_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-pie -no-pie tests/fs_media_failure_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+
+build/fs-media-rw-probe: tests/fs_media_rw_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) include/multios/copy.h build/fs-profile.stamp
+	$(CC) $(COMMON) -O2 tests/fs_media_rw_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_OBJ) -Wl,--gc-sections -o $@
+build/fs-media-rw-probe-sanitize: tests/fs_media_rw_probe.c tests/fs_read_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) include/multios/copy.h build/fs-profile.stamp
+	$(CC) $(COMMON) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie tests/fs_media_rw_probe.c core/hal.c $(FS_LIB) lib/util.c $(NTFS_HOST_SAN_OBJ) -Wl,--gc-sections -o $@
+

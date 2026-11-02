@@ -4,17 +4,18 @@
 #include <assert.h>
 #include <stdio.h>
 static int result,calls,readcalls;
+static int mount_result,read_result,next_result,free_result,mount_bad,next_stall;
 int disk_read(u32 l,u8*b){(void)l;mzero(b,512);return 0;}
 int disk_write(u32 l,const u8*b){(void)l;(void)b;assert(0);return IO;}
 int disk_flush(void){return 0;}u32 disk_sectors(void){return 128;}int disk_writable(void){return 1;}
 void out(const char*s){(void)s;}void putch(char c){(void)c;}
 static int probe(const u8*b){(void)b;return 1;}static int priority(u8 t){(void)t;return 100;}
-static int mount(u32 b,u32 n){vol.base=b;vol.sectors=n;return 0;}
+static int mount(u32 b,u32 n){vol.base=b;vol.sectors=n;if(mount_bad)vol.base++;return mount_result;}
 static Stream root(void){Stream s={.first=2,.flags=ATTR_DIR,.root=1};return s;}
-static int next(Stream s,u32*c,Entry*e){(void)s;if(*c)return 0;mzero(e,sizeof(*e));mcopy(e->name,"file",5);e->ascii=1;e->data=(Stream){.first=3,.size=1,.valid=1};*c=1;return 1;}
-static int read32(Stream s,u32 o,u8*b,u32 n){(void)s;(void)o;if(n)*b='X';return 0;}
-static int read64(const MultiFile64*f,uint64_t o,u8*b,u32 n){(void)f;(void)o;readcalls++;if(n)*b='X';return 0;}
-static int freecount(u32*n){*n=1;return 0;}static int unlock(void){vol.writable=1;return 0;}
+static int next(Stream s,u32*c,Entry*e){(void)s;if(next_result)return next_result;if(*c)return 0;mzero(e,sizeof(*e));mcopy(e->name,"file",5);e->ascii=1;e->data=(Stream){.first=3,.size=1,.valid=1};if(!next_stall)*c=1;return 1;}
+static int read32(Stream s,u32 o,u8*b,u32 n){(void)s;(void)o;if(n)*b='X';return read_result;}
+static int read64(const MultiFile64*f,uint64_t o,u8*b,u32 n){(void)f;(void)o;readcalls++;if(n)*b='X';return read_result;}
+static int freecount(u32*n){*n=1;return free_result;}static int unlock(void){vol.writable=1;return 0;}
 static int put(const char*p,const u8*b,u32 n,int m,const char*s){(void)p;(void)b;(void)n;(void)m;(void)s;calls++;return result;}
 static int writeat(const char*p,uint64_t o,const u8*b,u32 n){(void)o;return put(p,b,n,0,0);}
 static int resizefile(const char*p,uint64_t n){(void)n;return put(p,0,0,0,0);}

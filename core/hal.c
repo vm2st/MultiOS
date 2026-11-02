@@ -5,7 +5,7 @@
 #include "multios/storage_tx.h"
 #endif
 static MultiHal active;
-static int bound;
+static int bound,media_failed;
 int multi_hal_bind(const MultiHal *h) {
     if (vol.mounted)
         return INVALID;
@@ -13,10 +13,12 @@ int multi_hal_bind(const MultiHal *h) {
         !h->console.getc || !h->block.read || h->block.sector_bytes != 512 || !h->block.sectors ||
         h->block.sectors > 0x10000000u)
         return INVALID;
-    if (h->block.writable && (!h->block.write || !h->block.flush))
+    if ((h->block.writable!=0&&h->block.writable!=1) ||
+        (h->block.writable && (!h->block.write || !h->block.flush)))
         return INVALID;
     active = *h;
     bound = 1;
+    media_failed = 0;
 #ifdef MULTIOS_STORAGE_TX
     multi_storage_reset();
 #endif
@@ -25,22 +27,35 @@ int multi_hal_bind(const MultiHal *h) {
 const MultiHal *multi_hal(void) {
     return bound ? &active : 0;
 }
+int multi_hal_media_unavailable(void){return !bound||media_failed;}
 int multi_hal_media_failed(void *ctx){
  if(!bound||!ctx||ctx!=active.block.ctx)return INVALID;
- active.block.writable=0;
+ media_failed=1;active.block.writable=0;
+#ifdef MULTIOS_STORAGE_TX
+ multi_storage_media_failed();
+#endif
  if(vol.mounted){vol.writable=0;vol.poisoned=1;}
  return 0;
 }
 static int io_result(int r,int write_side) {
     if(r>0)r=IO; /* provider ABI: exactly zero or a negative error */
+    /* A callback can notify removal and nevertheless return zero. */
+    if(!r&&media_failed)r=READONLY;
     if(r<0 && vol.mounted && (vol.writable || write_side)) {
         vol.poisoned=1;vol.writable=0;
     }
     return r;
 }
+static int reject_request(int r,int write_side){
+#ifdef MULTIOS_STORAGE_TX
+    r=multi_storage_reject(r);
+#endif
+    return io_result(r,write_side);
+}
 int disk_read(u32 lba, u8 *b) {
     if (!bound || !b || lba >= active.block.sectors)
-        return IO;
+        return reject_request(IO,0);
+    if(media_failed)return READONLY;
 #ifdef MULTIOS_STORAGE_TX
     return io_result(multi_storage_read(lba,b),0);
 #else
@@ -49,7 +64,7 @@ int disk_read(u32 lba, u8 *b) {
 }
 int disk_write(u32 lba, const u8 *b) {
     if (!bound || !b || lba >= active.block.sectors)
-        return IO;
+        return reject_request(IO,1);
     if (!active.block.writable || (vol.mounted && vol.poisoned))
         return READONLY;
 #ifdef MULTIOS_STORAGE_TX
@@ -61,6 +76,7 @@ int disk_write(u32 lba, const u8 *b) {
 int disk_flush(void) {
     if (!bound)
         return IO;
+    if(media_failed)return READONLY;
 #ifdef MULTIOS_STORAGE_TX
     return io_result(multi_storage_flush(),1);
 #else

@@ -58,7 +58,7 @@ static int save(MultiUndo *j,u32 active,u32 count,uint64_t tx){
   u8 check[512];r=multi_block64_read(j->io,j->config.journal_start+slot,check);
   if(r<0)return status(j,r);if(!equal(check,b,512))return status(j,IO);
  }
- j->sequence=next;j->transaction=tx;j->count=count;j->active=(int)active;j->mirror_first=0;j->degraded=0;if(!active)j->owned=0;return 0;
+ j->sequence=next;j->transaction=tx;j->count=count;j->active=(int)active;j->mirror_first=0;j->degraded=0;if(!active){j->owned=0;j->abort_error=0;}return 0;
 }
 int multi_undo_format(MultiBlock64 *io,const MultiUndoConfig *c){
  TRY(config_ok(io,c));if(!writable(io))return READONLY;u8 b[512];
@@ -135,18 +135,29 @@ int multi_undo_begin(MultiUndo *j){
  if(j->sequence>UINT64_MAX-((uint64_t)j->capacity+2))return UNSUP;
  int r=save(j,ACTIVE,0,j->sequence+1);if(!r)j->owned=1;return r;
 }
+/* A rejected request must not be hidden by a later success from a module.
+ * Logical rejections do not damage the provider: recovery remains possible. */
+int multi_undo_abort(MultiUndo *j,int r){
+ if(r>=0)r=r?IO:INVALID;
+ if(!j||!j->ready||!j->active||!j->owned)return r;
+ if(!j->abort_error)j->abort_error=r;
+ return j->abort_error;
+}
 int multi_undo_read(MultiUndo *j,uint64_t lba,u8 *b){
- TRY(state_ok(j));if(!b)return INVALID;if(!target_ok(j,lba))return BAD;
+ TRY(state_ok(j));if(!b)return multi_undo_abort(j,INVALID);
+ if(!target_ok(j,lba))return multi_undo_abort(j,BAD);
  int r=multi_block64_read(j->io,lba,b);return r<0?status(j,r):r;
 }
 int multi_undo_write(MultiUndo *j,uint64_t lba,const u8 *b){
- TRY(state_ok(j));if(!b)return INVALID;if(!j->active)return INVALID;
- if(!target_ok(j,lba))return BAD;if(!writable(j->io))return READONLY;
- if(j->sequence==UINT64_MAX)return UNSUP;
- if(!j->owned)return INVALID;
+ TRY(state_ok(j));if(!j->active||!j->owned)return INVALID;
+ if(j->abort_error)return j->abort_error;
+ if(!b)return multi_undo_abort(j,INVALID);
+ if(!target_ok(j,lba))return multi_undo_abort(j,BAD);
+ if(!writable(j->io))return multi_undo_abort(j,READONLY);
+ if(j->sequence==UINT64_MAX)return multi_undo_abort(j,UNSUP);
  u32 index=0;while(index<j->count&&j->targets[index]!=lba)index++;
  if(index==j->count){
-  if(index==j->capacity)return NOSPACE;
+  if(index==j->capacity)return multi_undo_abort(j,NOSPACE);
   u8 original[512],desc[512];int r=multi_block64_read(j->io,lba,original);if(r<0)return status(j,r);
   make_record(j,index,lba,crc(original,512),desc);
   uint64_t sector=j->config.journal_start+2+((uint64_t)index<<1);
@@ -165,7 +176,8 @@ int multi_undo_write(MultiUndo *j,uint64_t lba,const u8 *b){
  int r=multi_block64_write(j->io,lba,b);if(r<0)return status(j,r);j->expected_crc[index]=crc(b,512);return r;
 }
 int multi_undo_commit(MultiUndo *j){
- TRY(state_ok(j));if(!j->active)return INVALID;if(!writable(j->io))return READONLY;
+ TRY(state_ok(j));if(!j->active)return INVALID;
+ if(j->abort_error)return j->abort_error;if(!writable(j->io))return READONLY;
  if(j->sequence==UINT64_MAX)return UNSUP;
  int r=validate_records(j);if(r<0)return status(j,r);
  if(!j->owned)return INVALID;

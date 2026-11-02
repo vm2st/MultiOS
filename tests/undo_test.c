@@ -82,13 +82,13 @@ static void corrupt(void){init();CK(!transaction(0));memcpy(pending,stable,sizeo
  for(u32 n=1;n<=8;n++){memcpy(stable,pending,sizeof(stable));reboot();read_fail=n;CK(multi_undo_open(&j,&io,&cfg)==IO&&!writes&&io.failed);corruptions++;}
 }
 static void limits(void){init();CK(!multi_undo_begin(&j));for(u32 n=0;n<8;n++)CK(!multi_undo_write(&j,cfg.data_start+n,a));u32 before=steps;
- CK(j.count==8&&multi_undo_write(&j,cfg.data_start+8,a)==NOSPACE&&steps==before);CK(!multi_undo_write(&j,cfg.data_start,a)&&j.count==8);CK(!multi_undo_recover(&j)&&image_same(stable,base));
+ CK(j.count==8&&multi_undo_write(&j,cfg.data_start+8,a)==NOSPACE&&steps==before);CK(multi_undo_write(&j,cfg.data_start,a)==NOSPACE&&j.count==8);CK(!multi_undo_recover(&j)&&image_same(stable,base));
  before=writes;CK(multi_undo_format(&io,&cfg)==EXISTS&&writes==before);MultiUndoConfig bad=cfg;bad.data_start=cfg.journal_start;CK(multi_undo_format(&io,&bad)==INVALID);
  bad=cfg;bad.journal_start=UINT64_MAX-1;CK(multi_undo_format(&io,&bad)==INVALID);bad=cfg;bad.data_start=UINT64_MAX;CK(multi_undo_format(&io,&bad)==INVALID);
  bad=cfg;memset(bad.media_id,0,16);CK(multi_undo_format(&io,&bad)==INVALID);bad=cfg;bad.journal_sectors=100000;CK(multi_undo_format(&io,&bad)==INVALID);
  before=steps;CK(multi_undo_write(&j,cfg.data_start,a)==INVALID&&steps==before);CK(!multi_undo_begin(&j));before=steps;
  CK(multi_undo_write(&j,cfg.journal_start,a)==BAD&&steps==before);CK(multi_undo_write(&j,UINT64_MAX,a)==BAD&&steps==before);
- CK(multi_undo_write(&j,cfg.data_start+DN,a)==BAD&&steps==before);CK(multi_undo_write(&j,cfg.data_start,0)==INVALID&&steps==before);CK(!multi_undo_recover(&j)&&image_same(stable,base));
+ CK(multi_undo_write(&j,cfg.data_start+DN,a)==BAD&&steps==before);CK(multi_undo_write(&j,cfg.data_start,0)==BAD&&steps==before);CK(!multi_undo_recover(&j)&&image_same(stable,base));
  init();steps=0;positive=1;CK(multi_undo_begin(&j)==IO&&j.failed&&io.failed);recover(1);
  init();CK(!transaction(0));reboot();io.provider.writable=0;CK(!multi_undo_open(&j,&io,&cfg));before=steps;CK(multi_undo_recover(&j)==READONLY&&steps==before);
  reboot();io.provider.sector_bytes=4096;CK(multi_undo_open(&j,&io,&cfg)==INVALID);
@@ -103,7 +103,7 @@ static void limits(void){init();CK(!multi_undo_begin(&j));for(u32 n=0;n<8;n++)CK
  init();reboot();j.config=cfg;CK(!multi_undo_open(&j,&io,&j.config)&&j.ready&&j.config.data_start==cfg.data_start);
  /* A forged exhausted ACTIVE header must not permit repeated-sector writes. */
  init();CK(!transaction(0));for(u32 i=0;i<2;i++){p64(stable[JS+i]+24,UINT64_MAX);fix(stable[JS+i]);}
- reboot();CK(!multi_undo_open(&j,&io,&cfg));before=steps;CK(multi_undo_write(&j,cfg.data_start+2,a)==UNSUP&&steps==before);
+ reboot();CK(!multi_undo_open(&j,&io,&cfg));before=steps;CK(multi_undo_write(&j,cfg.data_start+2,a)==INVALID&&steps==before);
 }
 static void formatting(void){init();for(u32 n=1;n<=4;n++)for(u32 m=0;m<4;m++){
  memcpy(stable,base,sizeof(stable));memset(stable+JS,0,JN*512);reboot();cut=n;mode=m;CK(try_format()<0&&hit);reboot();int r=multi_undo_open(&j,&io,&cfg);CK(r==BAD||r==0);if(!r)CK(!j.active&&!multi_undo_recover(&j));CK(image_same(stable,base));}}

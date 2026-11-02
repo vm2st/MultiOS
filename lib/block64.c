@@ -24,6 +24,9 @@ int multi_block64_write(MultiBlock64 *io,uint64_t lba,const u8 *b) {
 }
 int multi_block64_flush(MultiBlock64 *io) {
     if(!io || !io->bound) return INVALID;
+    /* A failed provider must not issue a later flush that persists partial I/O.
+     * Reads remain available for diagnostics; recovery requires a fresh bind. */
+    if(io->failed) return READONLY;
     if(!io->provider.flush) return io->provider.writable?IO:0;
     return status(io,io->provider.flush(io->provider.ctx));
 }
