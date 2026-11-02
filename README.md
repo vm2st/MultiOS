@@ -35,5 +35,5 @@ Of course, we use AI. This enables this OS to exist in the first place. It’s w
 
 
 ## Current version
-0.37 PRE-BETA
+0.37 PRE-BETA | 
 0.4 version of README
